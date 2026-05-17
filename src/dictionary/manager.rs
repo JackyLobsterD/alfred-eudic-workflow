@@ -48,7 +48,8 @@ impl DictionaryManager {
         let content = match tokio::fs::read_to_string(completion_file).await {
             Ok(c) => c,
             Err(e) => {
-                panic!("Failed to read completion file: {}", e);
+                AlfredUtils::log(format!("Failed to read completion file: {}", e));
+                return Vec::new();
             }
         };
         let words = split_lines_concurrent(&content).await;
@@ -99,4 +100,16 @@ async fn split_lines_concurrent(content: &str) -> Vec<String> {
         parts.push(lines);
     }
     parts.into_iter().flatten().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn missing_completion_file_returns_empty_not_panic() {
+        let mgr = DictionaryManager::new(DictionaryConfig::new(None, None));
+        let r = mgr.find_matches_in_completion("/nonexistent/path/xyz.txt", "ap", 5).await;
+        assert!(r.is_empty());
+    }
 }
