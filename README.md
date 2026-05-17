@@ -53,6 +53,28 @@
 
 ![ecdict-search](img/ecdict-search.png)
 
+### Urban Dictionary 与 Wordnik 英英查询
+
+输入单词后自动并行查询 Urban Dictionary 与 Wordnik 英英词典；当 Wordnik 返回 <5 条结果或失败时，调用 Claude Haiku 4.5 做中文释义兜底。
+
+启用方式：在 workflow 配置面板 (`Alfred Preferences` → `Workflow` → `Eudic Search` → `[x]` 按钮) 设置以下环境变量：
+
+- `WORDNIK_API_KEY`：在 https://developer.wordnik.com/ 注册免费 key
+- `ANTHROPIC_API_KEY`：在 https://console.anthropic.com/ 获取
+
+未设置时该源静默不显示。建议两个都设为 `Don't Export` 以避免分享 workflow 时泄露。
+
+结果按 emoji 区分：
+
+- 📕 ECDICT（本地中文词典）
+- 📘 Wordnik（英英）
+- 🔥 Urban（俚语）
+- 🤖 Claude（LLM 兜底翻译）
+- ⚙️ 未配置 API key 的提示
+- ⚠️ 该源请求失败；回车重试（绕过缓存）
+
+查询结果在 SQLite 缓存中保存 7 天。
+
 ## Feature
 
 - [x] 支持 App Store 版本的 Lite 版本 (目前支持 **官网版本** 与 **App Store 专业版**)
