@@ -62,7 +62,7 @@
 - `WORDNIK_API_KEY`：在 https://developer.wordnik.com/ 注册免费 key
 - `ANTHROPIC_API_KEY`：在 https://console.anthropic.com/ 获取
 
-未设置时该源静默不显示。建议两个都设为 `Don't Export` 以避免分享 workflow 时泄露。
+未设置时该源会显示一个 `⚙️ <Source> 未配置 API key` 的提示条目（回车跳到 README 配置说明），不会阻塞其他源。建议两个都设为 `Don't Export` 以避免分享 workflow 时泄露。
 
 结果按 emoji 区分：
 
