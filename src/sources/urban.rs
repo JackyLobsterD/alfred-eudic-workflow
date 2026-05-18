@@ -8,7 +8,6 @@ use super::{DictEntry, DictionarySource, SourceError, SourceKind};
 
 const BASE_URL: &str = "https://api.urbandictionary.com/v0/define";
 const TOP_N: usize = 3;
-const MAX_DEF_CHARS: usize = 220;
 
 pub struct UrbanClient {
     http: Arc<Client>,
@@ -41,15 +40,11 @@ struct UrbanItem {
 }
 
 fn clean(s: &str) -> String {
-    // Urban wraps cross-refs in [brackets]; strip them and collapse whitespace.
+    // Urban wraps cross-refs in [brackets]; strip them and collapse
+    // whitespace. Full text is preserved here; the render layer decides
+    // how much to show in the (truncated) subtitle vs. the Quick Look card.
     let stripped: String = s.chars().filter(|c| *c != '[' && *c != ']').collect();
-    let collapsed: String = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.chars().count() > MAX_DEF_CHARS {
-        let truncated: String = collapsed.chars().take(MAX_DEF_CHARS).collect();
-        format!("{}…", truncated)
-    } else {
-        collapsed
-    }
+    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[async_trait]

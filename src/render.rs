@@ -29,23 +29,36 @@ pub fn render_dict(entries: &[DictEntry], kind: SourceKind) -> Vec<Item> {
             &truncate(&e.definition),
             e.extra.as_deref().unwrap_or(""),
         );
-        Item::new(title).subtitle(subtitle).arg(&e.headword)
+        // ⌘ reveals the full (untruncated) definition; ⌥ the metadata
+        // (👍/👎 for Urban, part-of-speech · source for Wordnik).
+        Item::new(title)
+            .subtitle(subtitle)
+            .arg(&e.headword)
+            .cmd(Mod::new().subtitle(e.definition.clone()))
+            .alt(Mod::new().subtitle(e.extra.clone().unwrap_or_default()))
     }).collect()
 }
 
 pub fn render_llm(result: &LlmResult, spell: &str) -> Vec<Item> {
-    let mut items = Vec::new();
-    for (i, t) in result.translations.iter().enumerate() {
-        let prefix = if i == 0 { "🤖" } else { "  " };
-        let title = format!("{} {}", prefix, spell);
-        let subtitle = if let Some(ex) = &result.example {
-            workflow_utils::aligned_text(t, ex)
-        } else {
-            t.clone()
-        };
-        items.push(Item::new(title).subtitle(subtitle).arg(spell));
+    if result.translations.is_empty() {
+        return Vec::new();
     }
-    items
+    // One row: all translations joined. ⌘ repeats them (untruncated),
+    // ⌥ shows the example sentence; full text also in the Quick Look card.
+    let joined = result.translations.join("；");
+    let subtitle = match &result.example {
+        Some(ex) => workflow_utils::aligned_text(&joined, ex),
+        None => joined.clone(),
+    };
+    let item = Item::new(format!("🤖 {}", spell))
+        .subtitle(subtitle)
+        .arg(spell)
+        .cmd(Mod::new().subtitle(joined));
+    let item = match &result.example {
+        Some(ex) => item.alt(Mod::new().subtitle(ex.clone())),
+        None => item,
+    };
+    vec![item]
 }
 
 pub fn render_ecdict(entries: &[StardictEntry]) -> Vec<Item> {
@@ -114,7 +127,11 @@ mod tests {
             example: Some("What a serendipity!".to_string()),
         };
         let items = render_llm(&r, "serendipity");
-        assert_eq!(items.len(), 2);
+        assert_eq!(items.len(), 1);
+        let json = serde_json::to_value(&items[0]).unwrap();
+        let subtitle = json.get("subtitle").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(subtitle.contains("机缘"));
+        assert!(subtitle.contains("巧合"));
     }
 
     #[test]

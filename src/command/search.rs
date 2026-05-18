@@ -11,6 +11,7 @@ use crate::cache::{Cache, sqlite::SqliteCache};
 use crate::dictionary::{DictionaryConfig, DictionaryManager};
 use crate::http::{dict_client, llm_client};
 use crate::llm::{LlmClient, LlmError, fetch_with_cache_llm};
+use crate::preview;
 use crate::render;
 use crate::sources::{
     DictionarySource, SourceError, SourceKind, fetch_with_cache,
@@ -85,11 +86,36 @@ pub async fn run_search(args: SearchArgs) -> Result<(), Box<dyn std::error::Erro
         None
     };
 
-    // Build items in order: fallback, ECDICT, Wordnik, Urban, LLM.
+    // Quick Look card: full untruncated text from every source, shown
+    // when the user presses Shift / ⌘Y on any row. Built before the
+    // result vecs are consumed below.
+    let quicklook = {
+        let wordnik_slice: &[crate::sources::DictEntry] =
+            wordnik_res.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
+        let urban_slice: &[crate::sources::DictEntry] =
+            urban_res.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
+        let llm_ref = llm_outcome.as_ref().and_then(|o| o.as_ref().ok());
+        let dir = cache_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        preview::write_preview(
+            &dir,
+            &args.spell,
+            ecdict_entries.first(),
+            wordnik_slice,
+            urban_slice,
+            llm_ref,
+        )
+    };
+
+    // Build items so the multi-source lookup is visible at the top:
+    // fallback, ECDICT best match, Wordnik, Urban, LLM, then the
+    // ECDICT prefix-completion long tail de-prioritised at the bottom.
     let mut items: Vec<Item> = Vec::new();
     items.push(Item::new(&args.spell).arg(&args.spell).subtitle("Type enter to check in Eudic"));
 
-    for it in render::render_ecdict(&ecdict_entries) { items.push(it); }
+    let mut ecdict_iter = render::render_ecdict(&ecdict_entries).into_iter();
+    if let Some(primary) = ecdict_iter.next() { items.push(primary); }
+
     push_source_items(&mut items, "Wordnik", SourceKind::Wordnik, wordnik_res, &args.spell);
     push_source_items(&mut items, "Urban", SourceKind::Urban, urban_res, &args.spell);
     if let Some(outcome) = llm_outcome {
@@ -97,6 +123,16 @@ pub async fn run_search(args: SearchArgs) -> Result<(), Box<dyn std::error::Erro
             Ok(r) => for it in render::render_llm(&r, &args.spell) { items.push(it); },
             Err(LlmError::NoApiKey) => items.push(render::render_no_api_key("Claude")),
             Err(e) => items.push(render::render_error("LLM", &e.to_string(), &args.spell)),
+        }
+    }
+
+    // ECDICT prefix-completion long tail: kept for discoverability but
+    // pushed below the multi-source results.
+    for it in ecdict_iter { items.push(it); }
+
+    if let Some(ref ql) = quicklook {
+        for it in &mut items {
+            it.quicklookurl = Some(ql.clone());
         }
     }
 
@@ -147,9 +183,9 @@ fn push_source_items(
     match res {
         Ok(v) if v.is_empty() => { /* nothing to show; not an error */ }
         Ok(v) => {
-            // Cap displayed entries for visual sanity.
-            let cap = match kind { SourceKind::Wordnik => 5, SourceKind::Urban => 3 };
-            let slice = v.iter().take(cap).cloned().collect::<Vec<_>>();
+            // One row per source in the list (the best entry); every
+            // sense is still in the Quick Look card (Shift / ⌘Y).
+            let slice = v.iter().take(1).cloned().collect::<Vec<_>>();
             for it in render::render_dict(&slice, kind) { items.push(it); }
         }
         Err(SourceError::NoApiKey) => items.push(render::render_no_api_key(name)),
@@ -157,10 +193,14 @@ fn push_source_items(
     }
 }
 
-fn open_cache() -> Result<SqliteCache, Box<dyn std::error::Error>> {
-    let dir = env::var("alfred_workflow_cache")
+fn cache_dir() -> std::path::PathBuf {
+    env::var("alfred_workflow_cache")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir().join("alfred-eudic-cache"));
+        .unwrap_or_else(|_| std::env::temp_dir().join("alfred-eudic-cache"))
+}
+
+fn open_cache() -> Result<SqliteCache, Box<dyn std::error::Error>> {
+    let dir = cache_dir();
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("lookup_cache.db");
     Ok(SqliteCache::open(path)?)

@@ -3,6 +3,7 @@ pub mod command;
 pub mod dictionary;
 pub mod http;
 pub mod llm;
+pub mod preview;
 pub mod render;
 pub mod sources;
 pub mod workflow_utils;
