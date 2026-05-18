@@ -37,6 +37,22 @@ struct WordnikDef {
     source_dictionary: Option<String>,
 }
 
+/// Remove `<...>` markup (Wiktionary `<xref>`, `<em>`, …), keep the
+/// inner text, and collapse the resulting whitespace.
+fn strip_tags(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut depth = 0u32;
+    for c in s.chars() {
+        match c {
+            '<' => depth += 1,
+            '>' if depth > 0 => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[async_trait]
 impl DictionarySource for WordnikClient {
     fn kind(&self) -> SourceKind { SourceKind::Wordnik }
@@ -84,7 +100,9 @@ impl DictionarySource for WordnikClient {
         let defs: Vec<WordnikDef> = resp.json().await
             .map_err(|e| SourceError::BadResponse(e.to_string()))?;
         let entries = defs.into_iter().filter_map(|d| {
-            let text = d.text?.trim().to_string();
+            // Wiktionary entries embed markup like <xref>word</xref>;
+            // strip every tag, keep the inner text.
+            let text = strip_tags(d.text?.trim());
             if text.is_empty() { return None; }
             let pos = d.part_of_speech.unwrap_or_default();
             let src = d.source_dictionary.unwrap_or_default();
@@ -110,6 +128,16 @@ mod tests {
     use crate::http::dict_client;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn strip_tags_removes_xref_keeps_text() {
+        assert_eq!(
+            strip_tags("a discovery and <xref>sagacity</xref>."),
+            "a discovery and sagacity."
+        );
+        assert_eq!(strip_tags("plain text"), "plain text");
+        assert_eq!(strip_tags("<em>nested <b>x</b></em> y"), "nested x y");
+    }
 
     #[tokio::test]
     async fn parses_definitions() {

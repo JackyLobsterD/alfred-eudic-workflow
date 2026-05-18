@@ -19,11 +19,18 @@ use crate::sources::{
 };
 use crate::{GITHUB_REPO, SEARCH_LIMIT, SearchArgs, WORKFLOW_ASSET_NAME};
 
-const LLM_TRIGGER_THRESHOLD: usize = 5;
+const LLM_TRIGGER_THRESHOLD: usize = 8;
 const MAX_LLM_SPELL_LEN: usize = 50;
 
-pub async fn run_search(args: SearchArgs) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::Error>> {
     ScriptFilter::reset();
+
+    // A leading `!` forces the LLM for this word regardless of how many
+    // Wordnik senses came back (Alfred script-filter modifier keys can't
+    // re-run the filter, so a query sigil is the practical equivalent).
+    let trimmed = args.spell.trim();
+    let force_llm = trimmed.starts_with('!');
+    args.spell = trimmed.strip_prefix('!').unwrap_or(trimmed).trim().to_string();
 
     if args.spell.len() <= 1 {
         ScriptFilter::item(Item::new("Input more than one letter"));
@@ -70,10 +77,12 @@ pub async fn run_search(args: SearchArgs) -> Result<(), Box<dyn std::error::Erro
     );
 
     // Decide whether to invoke LLM.
-    let llm_should_run = match &wordnik_res {
-        Ok(v) => v.len() < LLM_TRIGGER_THRESHOLD,
-        Err(_) => true,
-    } && spell_for_remote.chars().count() <= MAX_LLM_SPELL_LEN;
+    let llm_should_run = (force_llm
+        || match &wordnik_res {
+            Ok(v) => v.len() < LLM_TRIGGER_THRESHOLD,
+            Err(_) => true,
+        })
+        && spell_for_remote.chars().count() <= MAX_LLM_SPELL_LEN;
 
     let llm_outcome: Option<Result<crate::llm::LlmResult, LlmError>> = if llm_should_run {
         if anthropic_key.is_empty() {
