@@ -277,7 +277,7 @@
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>keyword</key>
-				<string>e</string>
+				<string>dic</string>
 				<key>queuedelaycustom</key>
 				<integer>3</integer>
 				<key>queuedelayimmediatelyinitially</key>
@@ -341,58 +341,58 @@
 		<key>37680D64-D1B3-431E-B5F9-3805034FBCE8</key>
 		<dict>
 			<key>xpos</key>
-			<real>265</real>
+			<real>265.0</real>
 			<key>ypos</key>
-			<real>490</real>
+			<real>490.0</real>
 		</dict>
 		<key>3B4ABA4F-A075-44D9-B3FE-3D60CEDBA80D</key>
 		<dict>
 			<key>xpos</key>
-			<real>750</real>
+			<real>750.0</real>
 			<key>ypos</key>
-			<real>210</real>
+			<real>210.0</real>
 		</dict>
 		<key>551B6DD5-E891-46CF-8692-243A4AE4CBED</key>
 		<dict>
 			<key>xpos</key>
-			<real>645</real>
+			<real>645.0</real>
 			<key>ypos</key>
-			<real>740</real>
+			<real>740.0</real>
 		</dict>
 		<key>74B48864-53EC-4648-91C3-F1E8547C9CCD</key>
 		<dict>
 			<key>xpos</key>
-			<real>965</real>
+			<real>965.0</real>
 			<key>ypos</key>
-			<real>210</real>
+			<real>210.0</real>
 		</dict>
 		<key>99F00F03-5A09-41BC-B609-D3E0EBED741F</key>
 		<dict>
 			<key>xpos</key>
-			<real>30</real>
+			<real>30.0</real>
 			<key>ypos</key>
-			<real>490</real>
+			<real>490.0</real>
 		</dict>
 		<key>AC69EA50-6D3F-443B-9B19-CD8CC6B864A7</key>
 		<dict>
 			<key>xpos</key>
-			<real>480</real>
+			<real>480.0</real>
 			<key>ypos</key>
-			<real>385</real>
+			<real>385.0</real>
 		</dict>
 		<key>B6D08E60-8060-4098-BB0F-33A8F4A94614</key>
 		<dict>
 			<key>xpos</key>
-			<real>635</real>
+			<real>635.0</real>
 			<key>ypos</key>
-			<real>415</real>
+			<real>415.0</real>
 		</dict>
 		<key>C34F0359-2F69-4CF5-B48E-204110679853</key>
 		<dict>
 			<key>xpos</key>
-			<real>605</real>
+			<real>605.0</real>
 			<key>ypos</key>
-			<real>240</real>
+			<real>240.0</real>
 		</dict>
 	</dict>
 	<key>userconfigurationconfig</key>
