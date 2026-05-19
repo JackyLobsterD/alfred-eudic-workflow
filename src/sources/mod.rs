@@ -1,13 +1,27 @@
 use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::cache::{Cache, CacheKind};
 
+/// Separator embedded between an Urban definition and its example inside
+/// `DictEntry.definition`. Uses U+001F (unit separator) so it can never
+/// collide with real text; `preview.rs` splits on it.
+pub const URBAN_EXAMPLE_SEP: &str = "\u{1F}";
+
 pub mod urban;
 pub mod wordnik;
+pub mod util;
+pub mod youdao;
+pub mod wikipedia;
+pub mod datamuse;
+pub mod wiktionary;
+pub mod freedict;
+pub mod mw;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
@@ -101,6 +115,37 @@ pub async fn fetch_with_cache(
     Ok(entries)
 }
 
+/// Cache-aware fetch for card sources. The fetcher returns `Option<T>`;
+/// only `Some` is cached. Any error inside the fetcher must surface as
+/// `None` so the card simply omits that block.
+pub async fn fetch_json_cached<T, F, Fut>(
+    cache: Arc<dyn Cache>,
+    kind: CacheKind,
+    spell: &str,
+    bypass: bool,
+    fetch: F,
+) -> Option<T>
+where
+    T: Serialize + DeserializeOwned,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Option<T>>,
+{
+    let key = spell.trim().to_lowercase();
+    if !bypass {
+        if let Some(bytes) = cache.get(kind, &key).await {
+            if let Ok(v) = serde_json::from_slice::<T>(&bytes) {
+                return Some(v);
+            }
+            // corrupt or schema-changed cache value — fall through and refetch
+        }
+    }
+    let value = fetch().await?;
+    if let Ok(bytes) = serde_json::to_vec(&value) {
+        cache.put(kind, &key, &bytes).await;
+    }
+    Some(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,5 +191,46 @@ mod tests {
         let _ = fetch_with_cache(&src, cache.clone(), "hello", false).await.unwrap();
         let _ = fetch_with_cache(&src, cache.clone(), "hello", true).await.unwrap();
         assert_eq!(src.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn json_cache_caches_some_and_skips_refetch() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug, Clone)]
+        struct D { v: u32 }
+        let cache: Arc<dyn Cache> = Arc::new(SqliteCache::in_memory().unwrap());
+        let calls = AtomicUsize::new(0);
+        let mk = || async { calls.fetch_add(1, Ordering::SeqCst); Some(D { v: 7 }) };
+        let a = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Youdao, "Hi", false, mk).await;
+        let b = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Youdao, "hi", false, mk).await;
+        assert_eq!(a, Some(D { v: 7 }));
+        assert_eq!(b, Some(D { v: 7 }));
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "second call must hit cache");
+    }
+
+    #[tokio::test]
+    async fn json_cache_does_not_cache_none() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct D { v: u32 }
+        let cache: Arc<dyn Cache> = Arc::new(SqliteCache::in_memory().unwrap());
+        let calls = AtomicUsize::new(0);
+        let mk = || async { calls.fetch_add(1, Ordering::SeqCst); None::<D> };
+        let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Datamuse, "x", false, mk).await;
+        let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Datamuse, "x", false, mk).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "None results are never cached");
+    }
+
+    #[tokio::test]
+    async fn json_cache_bypass_forces_refetch() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct D { v: u32 }
+        let cache: Arc<dyn Cache> = Arc::new(SqliteCache::in_memory().unwrap());
+        let calls = AtomicUsize::new(0);
+        let mk = || async { calls.fetch_add(1, Ordering::SeqCst); Some(D { v: 1 }) };
+        let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Wikipedia, "k", false, mk).await;
+        let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Wikipedia, "k", true, mk).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "bypass=true must skip cache and refetch");
     }
 }

@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod card;
 pub mod command;
 pub mod dictionary;
 pub mod http;
