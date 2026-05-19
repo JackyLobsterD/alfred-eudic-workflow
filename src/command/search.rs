@@ -74,21 +74,13 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
     let wordnik = WordnikClient::new(dict_client(), wordnik_key);
     let spell_for_remote = args.spell.trim().to_string();
 
-    let (urban_res, wordnik_res) = tokio::join!(
+    let card_keys = CardKeys { mw_learners: mw_learners_key, mw_thesaurus: mw_thesaurus_key };
+
+    let (urban_res, wordnik_res, card_extra) = tokio::join!(
         fetch_with_cache(&urban as &dyn DictionarySource, cache.clone(), &spell_for_remote, bypass_cache),
         fetch_with_cache(&wordnik as &dyn DictionarySource, cache.clone(), &spell_for_remote, bypass_cache),
+        gather_card_data(cache.clone(), &spell_for_remote, bypass_cache, &card_keys),
     );
-
-    let card_extra = gather_card_data(
-        cache.clone(),
-        &spell_for_remote,
-        bypass_cache,
-        &CardKeys {
-            mw_learners: mw_learners_key,
-            mw_thesaurus: mw_thesaurus_key,
-        },
-    )
-    .await;
 
     // Decide whether to invoke LLM.
     let llm_should_run = (force_llm
