@@ -51,7 +51,7 @@ impl WikipediaClient {
             return None;
         }
         let raw: RawSummary = resp.json().await.ok()?;
-        if raw.kind == "disambiguation" || raw.extract.trim().is_empty() {
+        if raw.kind == "disambiguation" || raw.kind == "no-extract" || raw.extract.trim().is_empty() {
             return None;
         }
         Some(WikipediaSummary {
@@ -122,5 +122,17 @@ mod tests {
         Mock::given(method("GET")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
         let c = WikipediaClient::with_base_url(dict_client(), format!("{}/summary", server.uri()));
         assert!(c.fetch("zzzzzz").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn no_extract_type_is_none() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "type": "no-extract", "title": "File:X.svg", "extract": "some residual text"
+            })))
+            .mount(&server).await;
+        let c = WikipediaClient::with_base_url(dict_client(), format!("{}/summary", server.uri()));
+        assert!(c.fetch("File:X.svg").await.is_none());
     }
 }
