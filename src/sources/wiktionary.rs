@@ -8,7 +8,7 @@ use std::sync::Arc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::sources::util::encode_path_segment;
+use crate::sources::util::{encode_path_segment, strip_tags};
 
 const BASE_URL: &str = "https://en.wiktionary.org/api/rest_v1/page/definition";
 
@@ -32,20 +32,6 @@ struct RawDef { #[serde(rename = "partOfSpeech", default)] pos: String, #[serde(
 #[derive(Deserialize)]
 struct RawSense { #[serde(default)] definition: String }
 
-/// Remove `<...>` HTML tags Wiktionary embeds in definitions.
-fn strip_tags(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut depth = 0u32;
-    for c in s.chars() {
-        match c {
-            '<' => depth += 1,
-            '>' if depth > 0 => depth -= 1,
-            _ if depth == 0 => out.push(c),
-            _ => {}
-        }
-    }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
-}
 
 impl WiktionaryClient {
     pub fn new(http: Arc<Client>) -> Self {
@@ -117,6 +103,7 @@ mod tests {
     async fn no_english_is_none() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
+            .and(path("/definition/test"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "fr": [{"partOfSpeech": "Noun", "definitions": [{"definition": "x"}]}]
             })))
