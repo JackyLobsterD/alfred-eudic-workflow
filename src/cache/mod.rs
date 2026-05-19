@@ -13,7 +13,6 @@ pub enum CacheKind {
     Wikipedia,
     Datamuse,
     Wiktionary,
-    FreeDict,
     MwLearners,
     MwThesaurus,
 }
@@ -28,18 +27,17 @@ impl CacheKind {
             CacheKind::Wikipedia => "cache_wikipedia",
             CacheKind::Datamuse => "cache_datamuse",
             CacheKind::Wiktionary => "cache_wiktionary",
-            CacheKind::FreeDict => "cache_freedict",
             CacheKind::MwLearners => "cache_mw_learners",
             CacheKind::MwThesaurus => "cache_mw_thesaurus",
         }
     }
 
     /// All variants, used by cache migration.
-    pub fn all() -> [CacheKind; 10] {
+    pub fn all() -> [CacheKind; 9] {
         [
             CacheKind::Urban, CacheKind::Wordnik, CacheKind::Llm,
             CacheKind::Youdao, CacheKind::Wikipedia, CacheKind::Datamuse,
-            CacheKind::Wiktionary, CacheKind::FreeDict,
+            CacheKind::Wiktionary,
             CacheKind::MwLearners, CacheKind::MwThesaurus,
         ]
     }

@@ -62,11 +62,22 @@ body{font:15px/1.6 -apple-system,Helvetica,sans-serif;background:#1e1e1e;\
 color:#e8e8e8;margin:0;padding:22px 26px;}\
 h1{font-size:24px;margin:0 0 2px;}\
 .ph{color:#999;margin:0 0 8px;}\
-.links{margin:0 0 18px;font-size:12px;color:#888;}\
+.links{margin:0 0 14px;font-size:12px;color:#888;}\
 .links a{margin-right:14px;white-space:nowrap;}\
-h2{font-size:14px;margin:22px 0 6px;padding-bottom:4px;\
-border-bottom:1px solid #3a3a3a;color:#9ad;letter-spacing:.3px;}\
+.toc{margin:0 0 22px;padding:10px 12px;background:#262626;\
+border-radius:6px;font-size:13px;}\
+.toc a{margin-right:14px;white-space:nowrap;color:#9cf;\
+text-decoration:none;}\
+.toc a:hover{color:#cdf;}\
+section{margin-top:30px;padding-top:6px;border-top:1px solid #2a2a2a;}\
+section:first-of-type{margin-top:0;border-top:0;padding-top:0;}\
+h2{font-size:15px;margin:0 -26px 8px;padding:8px 26px 6px;\
+background:#1e1e1e;border-bottom:1px solid #3a3a3a;color:#9ad;\
+letter-spacing:.3px;position:sticky;top:0;z-index:5;}\
 h3{font-size:13px;margin:14px 0 4px;color:#cdb;letter-spacing:.3px;}\
+.sense-row{display:grid;grid-template-columns:max-content 1fr;\
+gap:6px 12px;align-items:baseline;margin:4px 0;}\
+.sense-row .src{white-space:nowrap;}\
 h4{font-size:12px;margin:10px 0 2px;color:#a9d;font-weight:600;\
 text-transform:none;}\
 h4 a{color:#a9d;text-decoration:none;border-bottom:1px dotted #678;}\
@@ -113,7 +124,6 @@ pub fn write_preview(
     let phonetic = ecdict
         .and_then(|e| e.phonetic.clone())
         .filter(|p| !p.is_empty())
-        .or_else(|| extra.freedict.as_ref().and_then(|f| f.phonetic.clone()))
         .or_else(|| extra.mw_learners.as_ref().and_then(|m| m.phonetic.clone()));
 
     // 🤖 LLM — rendered FIRST and inline. When the LLM cache is empty
@@ -137,7 +147,7 @@ pub fn write_preview(
         } else {
             llm.map(render_claude_inner).unwrap_or_default()
         };
-        let _ = write!(body, "<section><h2>🤖 LLM</h2>{}</section>", inner_now);
+        let _ = write!(body, "<section><h2 id=\"llm\">🤖 LLM</h2>{}</section>", inner_now);
     }
 
     // Block 1: English-English — each source gets its own labelled
@@ -152,13 +162,10 @@ pub fn write_preview(
         let has_wn = !wordnik.is_empty();
         let has_ml = extra.mw_learners.as_ref().map(|m| !m.short_defs.is_empty()).unwrap_or(false);
         let has_wk = extra.wiktionary.as_ref().map(|w| !w.senses.is_empty()).unwrap_or(false);
-        let has_fd = extra.freedict.as_ref()
-            .map(|f| f.meanings.iter().any(|m| !m.definitions.is_empty()))
-            .unwrap_or(false);
         let has_yd = extra.youdao.as_ref().map(|y| !y.ee.is_empty()).unwrap_or(false);
 
-        if has_wn || has_ml || has_wk || has_fd || has_yd {
-            let _ = write!(body, "<section><h2>🔤 English-English</h2>");
+        if has_wn || has_ml || has_wk || has_yd {
+            let _ = write!(body, "<section><h2 id=\"ee\">🔤 English-English</h2>");
 
             if has_wn {
                 let _ = write!(body, "<h3>📘 <a href=\"{}\">Wordnik →</a></h3><ol>", esc(&wn_url));
@@ -222,30 +229,6 @@ pub fn write_preview(
                 }
             }
 
-            if let Some(f) = &extra.freedict {
-                if has_fd {
-                    let _ = write!(body, "<h3>📓 FreeDict</h3><ol>");
-                    let mut shown = 0usize;
-                    let mut total = 0usize;
-                    for m in &f.meanings { total += m.definitions.len(); }
-                    'fd: for m in &f.meanings {
-                        for d in &m.definitions {
-                            if shown >= SECONDARY_CAP { break 'fd; }
-                            let _ = write!(body, "<li>{}", esc(d));
-                            if !m.pos.is_empty() {
-                                let _ = write!(body, "<span class=\"meta\">{}</span>", esc(&m.pos));
-                            }
-                            let _ = write!(body, "</li>");
-                            shown += 1;
-                        }
-                    }
-                    if total > SECONDARY_CAP {
-                        let _ = write!(body, "<li><span class=\"src\">… (+{} more on dictionaryapi.dev)</span></li>", total - SECONDARY_CAP);
-                    }
-                    let _ = write!(body, "</ol>");
-                }
-            }
-
             if let Some(y) = &extra.youdao {
                 if !y.ee.is_empty() {
                     let _ = write!(body, "<h3>🌐 <a href=\"{}\">Youdao →</a></h3><ol>", esc(&yd_url));
@@ -267,32 +250,18 @@ pub fn write_preview(
     {
         let mw = extra.mw_thesaurus.as_ref();
         let dm = extra.datamuse.as_ref();
-        let fd = extra.freedict.as_ref();
         let yd = extra.youdao.as_ref();
-
-        let mut fd_syn: Vec<String> = Vec::new();
-        let mut fd_ant: Vec<String> = Vec::new();
-        if let Some(f) = fd {
-            for m in &f.meanings {
-                fd_syn.extend(m.synonyms.iter().cloned());
-                fd_ant.extend(m.antonyms.iter().cloned());
-            }
-        }
-        dedup(&mut fd_syn);
-        dedup(&mut fd_ant);
 
         let has_mw_syn = mw.map(|t| !t.synonym_groups.is_empty()).unwrap_or(false);
         let has_mw_ant = mw.map(|t| !t.antonym_groups.is_empty()).unwrap_or(false);
         let has_dm_syn = dm.map(|d| !d.synonyms.is_empty()).unwrap_or(false);
         let has_dm_ant = dm.map(|d| !d.antonyms.is_empty()).unwrap_or(false);
         let has_dm_rel = dm.map(|d| !d.related.is_empty()).unwrap_or(false);
-        let has_fd_syn = !fd_syn.is_empty();
-        let has_fd_ant = !fd_ant.is_empty();
         let has_yd_syn = yd.map(|y| !y.syno.is_empty()).unwrap_or(false);
         let has_yd_rel = yd.map(|y| !y.rel_word.is_empty()).unwrap_or(false);
 
         let any = has_mw_syn || has_mw_ant || has_dm_syn || has_dm_ant
-            || has_dm_rel || has_fd_syn || has_fd_ant || has_yd_syn || has_yd_rel;
+            || has_dm_rel || has_yd_syn || has_yd_rel;
 
         // Per-source link targets used as h4 anchors below.
         let w = encode_path_segment(spell.trim());
@@ -300,10 +269,10 @@ pub fn write_preview(
         let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", w);
 
         if any {
-            let _ = write!(body, "<section><h2>🔄 Synonyms / Antonyms / Related</h2>");
+            let _ = write!(body, "<section><h2 id=\"syn\">🔄 Synonyms / Antonyms / Related</h2>");
 
             // ---- Synonyms (all sources, source-grouped) ----
-            if has_mw_syn || has_dm_syn || has_fd_syn || has_yd_syn {
+            if has_mw_syn || has_dm_syn || has_yd_syn {
                 let _ = write!(body, "<h3>Synonyms</h3>");
                 if let Some(t) = mw {
                     if !t.synonym_groups.is_empty() {
@@ -321,7 +290,7 @@ pub fn write_preview(
                             };
                             let _ = write!(
                                 body,
-                                "<p><span class=\"src\">{}:</span> {}</p>",
+                                "<p class=\"sense-row\"><span class=\"src\">{}:</span><span>{}</span></p>",
                                 esc(&label), esc(&g.join(", "))
                             );
                         }
@@ -332,18 +301,10 @@ pub fn write_preview(
                         let _ = write!(body, "<h4>🎯 Datamuse</h4>");
                         let _ = write!(
                             body,
-                            "<p><span class=\"src\">({}):</span> {}</p>",
+                            "<p class=\"sense-row\"><span class=\"src\">({}):</span><span>{}</span></p>",
                             d.synonyms.len(), esc(&d.synonyms.join(", "))
                         );
                     }
-                }
-                if has_fd_syn {
-                    let _ = write!(body, "<h4>📕 FreeDict</h4>");
-                    let _ = write!(
-                        body,
-                        "<p><span class=\"src\">({}):</span> {}</p>",
-                        fd_syn.len(), esc(&fd_syn.join(", "))
-                    );
                 }
                 if let Some(y) = yd {
                     if !y.syno.is_empty() {
@@ -360,7 +321,7 @@ pub fn write_preview(
             }
 
             // ---- Antonyms (all sources, source-grouped) ----
-            if has_mw_ant || has_dm_ant || has_fd_ant {
+            if has_mw_ant || has_dm_ant {
                 let _ = write!(body, "<h3>Antonyms</h3>");
                 if let Some(t) = mw {
                     if !t.antonym_groups.is_empty() {
@@ -378,7 +339,7 @@ pub fn write_preview(
                             };
                             let _ = write!(
                                 body,
-                                "<p><span class=\"src\">{}:</span> {}</p>",
+                                "<p class=\"sense-row\"><span class=\"src\">{}:</span><span>{}</span></p>",
                                 esc(&label), esc(&g.join(", "))
                             );
                         }
@@ -389,18 +350,10 @@ pub fn write_preview(
                         let _ = write!(body, "<h4>🎯 Datamuse</h4>");
                         let _ = write!(
                             body,
-                            "<p><span class=\"src\">({}):</span> {}</p>",
+                            "<p class=\"sense-row\"><span class=\"src\">({}):</span><span>{}</span></p>",
                             d.antonyms.len(), esc(&d.antonyms.join(", "))
                         );
                     }
-                }
-                if has_fd_ant {
-                    let _ = write!(body, "<h4>📕 FreeDict</h4>");
-                    let _ = write!(
-                        body,
-                        "<p><span class=\"src\">({}):</span> {}</p>",
-                        fd_ant.len(), esc(&fd_ant.join(", "))
-                    );
                 }
             }
 
@@ -412,7 +365,7 @@ pub fn write_preview(
                         let _ = write!(body, "<h4>🎯 Datamuse</h4>");
                         let _ = write!(
                             body,
-                            "<p><span class=\"src\">({}):</span> {}</p>",
+                            "<p class=\"sense-row\"><span class=\"src\">({}):</span><span>{}</span></p>",
                             d.related.len(), esc(&d.related.join(", "))
                         );
                     }
@@ -437,35 +390,23 @@ pub fn write_preview(
 
     {
         let y = extra.youdao.as_ref();
-        let fd = extra.freedict.as_ref();
         let has_phr = y.map(|y| !y.phrs.is_empty()).unwrap_or(false);
         let has_sent = y.map(|y| !y.sents.is_empty()).unwrap_or(false);
-        let fd_ex: Vec<&String> = fd
-            .map(|f| f.meanings.iter().flat_map(|m| m.examples.iter()).collect())
-            .unwrap_or_default();
-        if has_phr || has_sent || !fd_ex.is_empty() {
+        if has_phr || has_sent {
             let word_enc = encode_path_segment(spell.trim());
             let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", word_enc);
-            let _ = write!(body, "<section><h2>🧩 Phrases / Examples</h2>");
+            let _ = write!(body, "<section><h2 id=\"phrases\">🧩 Phrases / Examples</h2>");
             if let Some(y) = y {
-                if has_phr || has_sent {
-                    let _ = write!(body, "<h3>🌐 <a href=\"{}\">Youdao →</a></h3>", esc(&yd_url));
-                    if !y.phrs.is_empty() {
-                        let _ = write!(body, "<ul>");
-                        for p in &y.phrs {
-                            let _ = write!(body, "<li>{}</li>", esc(p));
-                        }
-                        let _ = write!(body, "</ul>");
+                let _ = write!(body, "<h3>🌐 <a href=\"{}\">Youdao →</a></h3>", esc(&yd_url));
+                if !y.phrs.is_empty() {
+                    let _ = write!(body, "<ul>");
+                    for p in &y.phrs {
+                        let _ = write!(body, "<li>{}</li>", esc(p));
                     }
-                    for (en, zh) in &y.sents {
-                        let _ = write!(body, "<p>{}<span class=\"meta\">{}</span></p>", esc(en), esc(zh));
-                    }
+                    let _ = write!(body, "</ul>");
                 }
-            }
-            if !fd_ex.is_empty() {
-                let _ = write!(body, "<h3>📓 FreeDict</h3>");
-                for ex in fd_ex {
-                    let _ = write!(body, "<p><em>e.g.</em> {}</p>", esc(ex));
+                for (en, zh) in &y.sents {
+                    let _ = write!(body, "<p>{}<span class=\"meta\">{}</span></p>", esc(en), esc(zh));
                 }
             }
             let _ = write!(body, "</section>");
@@ -484,7 +425,7 @@ pub fn write_preview(
         if has_ecdict || has_yd {
             let word_enc = encode_path_segment(spell.trim());
             let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", word_enc);
-            let _ = write!(body, "<section><h2>📕 Chinese</h2>");
+            let _ = write!(body, "<section><h2 id=\"zh\">📕 Chinese</h2>");
             if let Some(line) = ec_zh.filter(|s| !s.is_empty()) {
                 let _ = write!(body, "<h3>📕 ECDICT</h3><p>{}</p>", esc(&line));
             }
@@ -510,7 +451,7 @@ pub fn write_preview(
         let tags = e.tag_info();
         let collins = e.collins.filter(|c| *c > 0).map(|c| "⭐️".repeat(c.min(5) as usize));
         if infl.is_some() || tags.is_some() || collins.is_some() {
-            let _ = write!(body, "<section><h2>🔀 Inflections / Tags</h2>");
+            let _ = write!(body, "<section><h2 id=\"tags\">🔀 Inflections / Tags</h2>");
             let _ = write!(body, "<h3>📕 ECDICT</h3>");
             if let Some(i) = infl {
                 let _ = write!(body, "<p>{}</p>", esc(&i));
@@ -532,7 +473,7 @@ pub fn write_preview(
     // client correctly rejects (type=disambiguation -> None).
     if let Some(w) = &extra.wikipedia {
         if !w.extract.is_empty() {
-            let _ = write!(body, "<section><h2>📖 Wikipedia</h2><p>{}</p>", esc(&w.extract));
+            let _ = write!(body, "<section><h2 id=\"wiki\">📖 Wikipedia</h2><p>{}</p>", esc(&w.extract));
             if !w.images.is_empty() {
                 let _ = write!(body, "<div class=\"img-grid\">");
                 for url in &w.images {
@@ -555,47 +496,29 @@ pub fn write_preview(
     // own source sub-heading).
     {
         let yd_etym = extra.youdao.as_ref().and_then(|y| y.etym.as_deref()).filter(|s| !s.is_empty());
-        let fd_origin = extra.freedict.as_ref().and_then(|f| f.origin.as_deref()).filter(|s| !s.is_empty());
-        if yd_etym.is_some() || fd_origin.is_some() {
+        if let Some(e) = yd_etym {
             let word_enc = encode_path_segment(spell.trim());
             let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", word_enc);
-            let _ = write!(body, "<section><h2>🌱 Etymology</h2>");
-            if let Some(e) = yd_etym {
-                let _ = write!(
-                    body,
-                    "<h3>🌐 <a href=\"{}\">Youdao →</a></h3><p>{}</p>",
-                    esc(&yd_url), esc(e),
-                );
-            }
-            if let Some(o) = fd_origin {
-                let _ = write!(body, "<h3>📓 FreeDict</h3><p>{}</p>", esc(o));
-            }
+            let _ = write!(body, "<section><h2 id=\"etym\">🌱 Etymology</h2>");
+            let _ = write!(
+                body,
+                "<h3>🌐 <a href=\"{}\">Youdao →</a></h3><p>{}</p>",
+                esc(&yd_url), esc(e),
+            );
             let _ = write!(body, "</section>");
         }
     }
 
-    // Pronunciation: each source contributes its own phonetic and/or
-    // audio link. Sub-sectioned so the reader sees who said what.
+    // Pronunciation: ECDICT phonetic + M-W Learner's phonetic & audio.
     {
         let ec_ph = ecdict.and_then(|e| e.phonetic.clone()).filter(|s| !s.is_empty());
-        let fd_ph = extra.freedict.as_ref().and_then(|f| f.phonetic.clone()).filter(|s| !s.is_empty());
-        let fd_audio = extra.freedict.as_ref().and_then(|f| f.audio.clone()).filter(|s| !s.is_empty());
         let ml_ph = extra.mw_learners.as_ref().and_then(|m| m.phonetic.clone()).filter(|s| !s.is_empty());
         let ml_audio = extra.mw_learners.as_ref().and_then(|m| m.audio_url.clone()).filter(|s| !s.is_empty());
-        let any = ec_ph.is_some() || fd_ph.is_some() || fd_audio.is_some() || ml_ph.is_some() || ml_audio.is_some();
+        let any = ec_ph.is_some() || ml_ph.is_some() || ml_audio.is_some();
         if any {
-            let _ = write!(body, "<section><h2>🔊 Pronunciation</h2>");
+            let _ = write!(body, "<section><h2 id=\"pron\">🔊 Pronunciation</h2>");
             if let Some(p) = &ec_ph {
                 let _ = write!(body, "<h3>📕 ECDICT</h3><p>/{}/</p>", esc(p));
-            }
-            if fd_ph.is_some() || fd_audio.is_some() {
-                let _ = write!(body, "<h3>📓 FreeDict</h3>");
-                if let Some(p) = &fd_ph {
-                    let _ = write!(body, "<p>/{}/</p>", esc(p));
-                }
-                if let Some(a) = &fd_audio {
-                    let _ = write!(body, "<p><a href=\"{}\">▶ play audio</a></p>", esc(a));
-                }
             }
             if ml_ph.is_some() || ml_audio.is_some() {
                 let word_enc = encode_path_segment(spell.trim());
@@ -613,7 +536,7 @@ pub fn write_preview(
     }
 
     if !urban.is_empty() {
-        let _ = write!(body, "<section><h2>🔥 Urban Dictionary</h2><ol>");
+        let _ = write!(body, "<section><h2 id=\"urban\">🔥 Urban Dictionary</h2><ol>");
         for u in urban {
             let def = esc(&u.definition).replace(crate::sources::URBAN_EXAMPLE_SEP, "<br><em>e.g. ");
             let _ = write!(body, "<li>{}", def);
@@ -652,12 +575,14 @@ pub fn write_preview(
     } else {
         ""
     };
+    let toc_html = build_toc(&body);
     let html = format!(
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">{refresh}\
-<style>{STYLE}</style></head><body><h1>{}</h1>{ph}{links}{body}</body></html>",
+<style>{STYLE}</style></head><body><h1>{}</h1>{ph}{links}{toc}{body}</body></html>",
         esc(spell),
         refresh = refresh_meta,
         links = links_html,
+        toc = toc_html,
     );
     // Per-spell filename so concurrent searches (typing "as" then
     // "ass") don't race on a single shared preview.html — each query
@@ -666,6 +591,38 @@ pub fn write_preview(
     let path = cache_dir.join(preview_filename(spell));
     std::fs::write(&path, html).ok()?;
     Some(path.to_string_lossy().into_owned())
+}
+
+/// Sections to surface in the top-of-page table of contents, in render
+/// order. Each entry is `(id, short label)`. Only the ids that actually
+/// appear in `body` show up in the ToC, so empty sources don't get
+/// dangling links.
+const TOC_ENTRIES: &[(&str, &str)] = &[
+    ("llm",     "🤖 LLM"),
+    ("ee",      "🔤 EE"),
+    ("syn",     "🔄 Syn/Ant"),
+    ("phrases", "🧩 Phrases"),
+    ("zh",      "📕 中文"),
+    ("tags",    "🔀 Tags"),
+    ("wiki",    "📖 Wiki"),
+    ("etym",    "🌱 Etym"),
+    ("pron",    "🔊 Pron"),
+    ("urban",   "🔥 Urban"),
+];
+
+fn build_toc(body: &str) -> String {
+    let mut links = String::new();
+    for (id, label) in TOC_ENTRIES {
+        let needle = format!("id=\"{}\"", id);
+        if body.contains(&needle) {
+            let _ = write!(links, "<a href=\"#{}\">{}</a>", id, label);
+        }
+    }
+    if links.is_empty() {
+        String::new()
+    } else {
+        format!("<nav class=\"toc\">{}</nav>", links)
+    }
 }
 
 /// Render the inner HTML of the Claude section (the three sub-sections),
@@ -749,11 +706,6 @@ fn render_claude_inner(r: &LlmResult) -> String {
     body
 }
 
-fn dedup(v: &mut Vec<String>) {
-    let mut seen = std::collections::HashSet::new();
-    v.retain(|s| !s.trim().is_empty() && seen.insert(s.to_lowercase()));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -767,6 +719,22 @@ mod tests {
         let d = std::env::temp_dir().join(format!("eudic-card-test-{}-{}", std::process::id(), i));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn toc_skips_missing_sections_and_keeps_present_ones() {
+        let body = "<section><h2 id=\"ee\">x</h2></section>\
+                    <section><h2 id=\"wiki\">y</h2></section>";
+        let toc = build_toc(body);
+        assert!(toc.contains("href=\"#ee\""), "ee anchor present");
+        assert!(toc.contains("href=\"#wiki\""), "wiki anchor present");
+        assert!(!toc.contains("href=\"#syn\""), "absent sections must not appear");
+        assert!(toc.contains("class=\"toc\""), "nav wrapper has toc class");
+    }
+
+    #[test]
+    fn toc_is_empty_when_no_known_sections() {
+        assert!(build_toc("<p>nothing</p>").is_empty());
     }
 
     #[test]

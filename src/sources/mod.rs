@@ -20,7 +20,6 @@ pub mod youdao;
 pub mod wikipedia;
 pub mod datamuse;
 pub mod wiktionary;
-pub mod freedict;
 pub mod mw;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
