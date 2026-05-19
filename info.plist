@@ -460,6 +460,48 @@
 			<key>variable</key>
 			<string>ANTHROPIC_API_KEY</string>
 		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string></string>
+				<key>placeholder</key>
+				<string>dictionaryapi.com 申请 Learner's</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>可选：M-W Learner's 英英+音频（留空则跳过）</string>
+			<key>label</key>
+			<string>Merriam-Webster Learner's Key</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>MW_LEARNERS_API_KEY</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string></string>
+				<key>placeholder</key>
+				<string>dictionaryapi.com 申请 Thesaurus</string>
+				<key>required</key>
+				<false/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>可选：M-W 同义/反义词库（留空则跳过）</string>
+			<key>label</key>
+			<string>Merriam-Webster Thesaurus Key</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>MW_THESAURUS_API_KEY</string>
+		</dict>
 	</array>
 	<key>variablesdontexport</key>
 	<array/>
