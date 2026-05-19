@@ -10,7 +10,13 @@ static DICT_CLIENT: Lazy<Arc<Client>> = Lazy::new(|| {
     Arc::new(
         Client::builder()
             .user_agent(USER_AGENT)
-            .timeout(Duration::from_secs(2))
+            // Card fans out ~10 concurrent dict requests on cold start;
+            // a 2 s budget loses races on cold-TLS handshakes and leaves
+            // gaps in the card (e.g. Wikipedia silently missing for
+            // "fermium"). Warm requests hit SQLite — no network — so a
+            // larger ceiling only costs latency on the first miss.
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(5))
             .build()
             .expect("dict reqwest client must build"),
     )
