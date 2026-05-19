@@ -159,6 +159,28 @@ source silently skipped (no error item).
 - **M-W free tier**: 1000 queries/key/day, non-commercial only —
   documented; cache reduces volume.
 
+## Appendix: Verified M-W response shapes
+
+Both endpoints tested live (keys held by the user, configured via the
+Eudic panel as `MW_LEARNERS_API_KEY` / `MW_THESAURUS_API_KEY`).
+
+- Endpoints:
+  - Learner's: `https://dictionaryapi.com/api/v3/references/learners/json/<word>?key=<MW_LEARNERS_API_KEY>`
+  - Thesaurus: `https://dictionaryapi.com/api/v3/references/thesaurus/json/<word>?key=<MW_THESAURUS_API_KEY>`
+- Response = JSON array. If the array contains **strings** (spelling
+  suggestions, no exact entry) → treat as no-data, skip the block.
+- Learner's entry fields used: `fl` (part of speech), `shortdef`
+  (array of plain-text short definitions — use this; do **not** parse the
+  heavy `def` token soup in v1), `hwi.hw`, `hwi.prs[].ipa`,
+  `hwi.prs[].sound.audio` (audio token), `ins` (inflections).
+- Thesaurus entry fields used: `fl`, `shortdef`, `meta.syns` (array of
+  synonym groups), `meta.ants` (antonyms).
+- Audio URL: `https://media.merriam-webster.com/audio/prons/en/us/mp3/<subdir>/<audio>.mp3`
+  where `<subdir>` follows M-W's first-token rule (starts with `bix`→`bix`;
+  `gg`→`gg`; a number/punctuation→`number`; otherwise the first letter).
+- Strip M-W markup tokens (`{bc}`, `{it}...{/it}`, `{sx|word||}`, …) when
+  any non-`shortdef` text is used.
+
 ## Out of Scope / Future
 
 - Per-source enable/disable toggles.
