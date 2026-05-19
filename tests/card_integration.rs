@@ -19,6 +19,6 @@ async fn aggregator_then_preview_offline_is_safe() {
     let dir = std::env::temp_dir().join(format!("eudic-card-it-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // Empty aggregate + no other data ⇒ no card.
-    let none = write_preview(&dir, "zzzznotaword", None, &[], &[], None, &extra, false);
+    let none = write_preview(&dir, "zzzznotaword", None, &[], &[], alfred_eudic::preview::LlmState::Hidden, &extra);
     assert!(none.is_none());
 }

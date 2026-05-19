@@ -123,15 +123,21 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
         let llm_ref = llm_outcome.as_ref().and_then(|o| o.as_ref().ok());
         let dir = cache_dir();
         let _ = std::fs::create_dir_all(&dir);
+        let llm_state = if let Some(r) = llm_ref {
+            preview::LlmState::Ready(r)
+        } else if llm_loading {
+            preview::LlmState::Loading
+        } else {
+            preview::LlmState::Hidden
+        };
         let path = preview::write_preview(
             &dir,
             &args.spell,
             ecdict_entries.first(),
             wordnik_slice,
             urban_slice,
-            llm_ref,
+            llm_state,
             &card_extra,
-            llm_loading,
         );
         path
     };

@@ -101,13 +101,23 @@ font-size:13px;}\
 .img-grid img{display:block;height:120px;width:auto;border-radius:4px;\
 background:#222;}";
 
-/// Render the card to `<cache_dir>/preview.html`; return its path for use
-/// as an Alfred `quicklookurl`. `None` if there is nothing to show.
-/// When `llm_loading` is true, the `llm` argument is ignored, the Claude
-/// section renders a "still thinking" placeholder, and the HTML head
-/// gets `<meta http-equiv="refresh" content="2">` so the Quick Look
-/// webview auto-reloads until a background subprocess overwrites the
-/// file with the finished LLM data.
+/// State of the LLM section across the loading/finished/failed
+/// lifecycle. Lets the renderer keep the section visible even when the
+/// background subprocess returned an error — silently dropping it
+/// confused users into thinking the feature was off.
+#[derive(Debug, Clone, Copy)]
+pub enum LlmState<'a> {
+    /// Not configured (no API key) or word too long — section omitted.
+    Hidden,
+    /// Background subprocess still running. Placeholder + meta-refresh.
+    Loading,
+    /// Cache hit or subprocess finished. Renders full LLM content.
+    Ready(&'a LlmResult),
+    /// Subprocess returned an error. Shows a visible "unavailable" note
+    /// so the user knows the feature was attempted, not silently off.
+    Failed,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn write_preview(
     cache_dir: &Path,
@@ -115,9 +125,8 @@ pub fn write_preview(
     ecdict: Option<&StardictEntry>,
     wordnik: &[DictEntry],
     urban: &[DictEntry],
-    llm: Option<&LlmResult>,
+    llm_state: LlmState<'_>,
     extra: &CardSources,
-    llm_loading: bool,
 ) -> Option<String> {
     let mut body = String::new();
 
@@ -136,18 +145,28 @@ pub fn write_preview(
     // appears to disable JavaScript (XHR poller never fired), so the
     // robust path is a top-level meta-refresh. The user accepts the
     // brief whole-page flash on each tick.
-    let want_llm = llm_loading
-        || llm.map(|r| !render_claude_inner(r).is_empty()).unwrap_or(false);
-    if want_llm {
-        let inner_now = if llm_loading {
+    let llm_loading = matches!(llm_state, LlmState::Loading);
+    let llm_inner: Option<String> = match llm_state {
+        LlmState::Hidden => None,
+        LlmState::Loading => Some(
             "<p><span class=\"src\">⏳ Still thinking…</span> \
              this section will appear automatically in ~15–25 seconds. \
              You can keep scrolling the rest of the card.</p>"
-                .to_string()
-        } else {
-            llm.map(render_claude_inner).unwrap_or_default()
-        };
-        let _ = write!(body, "<section><h2 id=\"llm\">🤖 LLM</h2>{}</section>", inner_now);
+                .to_string(),
+        ),
+        LlmState::Ready(r) => {
+            let s = render_claude_inner(r);
+            if s.is_empty() { None } else { Some(s) }
+        }
+        LlmState::Failed => Some(
+            "<p><span class=\"src\">⚠️ LLM unavailable</span> \
+             — Anthropic call failed (likely rate-limit or timeout). \
+             Search this word again in Alfred to retry.</p>"
+                .to_string(),
+        ),
+    };
+    if let Some(inner) = llm_inner {
+        let _ = write!(body, "<section><h2 id=\"llm\">🤖 LLM</h2>{}</section>", inner);
     }
 
     // Block 1: English-English — each source gets its own labelled
@@ -740,7 +759,7 @@ mod tests {
     #[test]
     fn empty_everything_is_none() {
         let cs = CardSources::default();
-        assert!(write_preview(&dir(), "x", None, &[], &[], None, &cs, false).is_none());
+        assert!(write_preview(&dir(), "x", None, &[], &[], LlmState::Hidden, &cs).is_none());
     }
 
     #[test]
@@ -762,7 +781,7 @@ mod tests {
             definition: "feeling <xref>joy</xref>".into(),
             extra: Some("adjective".into()),
         }];
-        let p = write_preview(&dir(), "ha<ppy", None, &wordnik, &[], None, &cs, false).unwrap();
+        let p = write_preview(&dir(), "ha<ppy", None, &wordnik, &[], LlmState::Hidden, &cs).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         // Look for unique section-header markers (with emoji) so we don't
         // collide with the always-on top "More on …" links bar which also
@@ -789,7 +808,7 @@ mod tests {
             ec_zh: vec!["adj. 灿烂的".into()],
             ..Default::default()
         });
-        let p = write_preview(&dir(), "splendid", None, &[], &[], None, &cs, false).unwrap();
+        let p = write_preview(&dir(), "splendid", None, &[], &[], LlmState::Hidden, &cs).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         assert!(!html.contains("📖 Wikipedia"), "wiki block must be absent when only youdao digest exists");
         assert!(!html.contains("Splendid may refer to:"), "disambiguation string must not leak in");
@@ -804,7 +823,7 @@ mod tests {
             url: None,
             images: vec![],
         });
-        let p = write_preview(&dir(), "t", None, &[], &[], None, &cs, false).unwrap();
+        let p = write_preview(&dir(), "t", None, &[], &[], LlmState::Hidden, &cs).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         assert!(html.contains("📖 Wikipedia"));
         assert!(!html.contains("🔤 English-English"));
@@ -820,7 +839,7 @@ mod tests {
             definition: format!("plain  e.g. text{}an actual example", crate::sources::URBAN_EXAMPLE_SEP),
             extra: None,
         }];
-        let p = write_preview(&dir(), "x", None, &[], &urban, None, &cs, false).unwrap();
+        let p = write_preview(&dir(), "x", None, &[], &urban, LlmState::Hidden, &cs).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         // only ONE example break (from the real separator), the literal text survives
         assert_eq!(html.matches("<br><em>e.g. ").count(), 1);
@@ -833,6 +852,21 @@ mod tests {
         let cs = CardSources::default();
         let r = crate::llm::LlmResult { english: None, tech: None, chinese: None };
         // only LLM provided, but empty translations -> nothing to show -> None
-        assert!(write_preview(&dir(), "x", None, &[], &[], Some(&r), &cs, false).is_none());
+        assert!(write_preview(&dir(), "x", None, &[], &[], LlmState::Ready(&r), &cs).is_none());
+    }
+
+    #[test]
+    fn llm_failed_renders_visible_unavailable_note() {
+        // Regression: previously a failed LLM fetch hid the section
+        // entirely, leaving users unable to distinguish "feature off"
+        // from "feature broke". Failed state must keep the LLM h2 and
+        // show a retry hint.
+        let cs = CardSources::default();
+        let p = write_preview(&dir(), "osmium", None, &[], &[], LlmState::Failed, &cs).unwrap();
+        let html = std::fs::read_to_string(&p).unwrap();
+        assert!(html.contains("id=\"llm\""), "LLM section header must be present");
+        assert!(html.contains("LLM unavailable"), "must show unavailable note");
+        assert!(html.contains("Search this word again"), "must instruct on retry");
+        assert!(!html.contains("http-equiv=\"refresh\""), "must NOT auto-refresh on failure");
     }
 }

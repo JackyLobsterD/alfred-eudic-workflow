@@ -72,7 +72,14 @@ pub async fn run_card_update(args: SearchArgs) -> Result<(), Box<dyn std::error:
         gather_card_data(cache.clone(), &spell, false, &card_keys),
     );
 
-    let llm_result = if !anthropic_key.is_empty() && spell.chars().count() <= 50 {
+    // Three-state outcome: Ready when fetch succeeds, Failed when the
+    // Anthropic call errored (rate-limit, timeout, network), Hidden when
+    // the feature is off for this query (no key / spell too long).
+    // Hiding when we WANTED to render is the bug being fixed: users
+    // can't distinguish "feature off" from "feature broke", so the
+    // Failed branch keeps the section visible with a retry hint.
+    let llm_wanted = !anthropic_key.is_empty() && spell.chars().count() <= 50;
+    let llm_result_owned: Option<crate::llm::LlmResult> = if llm_wanted {
         let llm = LlmClient::new(llm_client(), anthropic_key);
         match fetch_with_cache_llm(&llm, cache.clone(), &spell, false).await {
             Ok(r) => Some(r),
@@ -85,14 +92,16 @@ pub async fn run_card_update(args: SearchArgs) -> Result<(), Box<dyn std::error:
         None
     };
 
-    // Rewrite the FULL preview.html with the finished LLM inline and
-    // no meta-refresh. The Quick Look webview, on its next 2 s tick,
-    // reloads preview.html and lands on this new content; the absence
-    // of the refresh tag stops the reload loop.
     let wordnik_slice: &[crate::sources::DictEntry] =
         wordnik_res.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
     let urban_slice: &[crate::sources::DictEntry] =
         urban_res.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
+
+    let llm_state = match (&llm_result_owned, llm_wanted) {
+        (Some(r), _) => preview::LlmState::Ready(r),
+        (None, true) => preview::LlmState::Failed,
+        (None, false) => preview::LlmState::Hidden,
+    };
 
     let _ = preview::write_preview(
         &dir,
@@ -100,9 +109,8 @@ pub async fn run_card_update(args: SearchArgs) -> Result<(), Box<dyn std::error:
         ecdict_entries.first(),
         wordnik_slice,
         urban_slice,
-        llm_result.as_ref(),
+        llm_state,
         &card_extra,
-        false, // no longer loading
     );
 
     Ok(())
