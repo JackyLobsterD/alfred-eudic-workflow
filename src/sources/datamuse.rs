@@ -1,3 +1,8 @@
+//! Card-only enrichment source. Intentionally NOT a `DictionarySource`
+//! (that trait yields a single inline-list definition row); Datamuse
+//! returns structured syn/ant/related data consumed by the card via
+//! `fetch_json_cached`.
+
 use std::sync::Arc;
 
 use reqwest::Client;
@@ -71,13 +76,13 @@ mod tests {
     #[tokio::test]
     async fn collects_syn_ant_related() {
         let server = MockServer::start().await;
-        Mock::given(method("GET")).and(query_param("rel_syn", "happy"))
+        Mock::given(method("GET")).and(query_param("rel_syn", "happy")).and(query_param("max", "12"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{"word":"glad"},{"word":"joyful"}])))
             .mount(&server).await;
-        Mock::given(method("GET")).and(query_param("rel_ant", "happy"))
+        Mock::given(method("GET")).and(query_param("rel_ant", "happy")).and(query_param("max", "12"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{"word":"sad"}])))
             .mount(&server).await;
-        Mock::given(method("GET")).and(query_param("ml", "happy"))
+        Mock::given(method("GET")).and(query_param("ml", "happy")).and(query_param("max", "12"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{"word":"cheerful"}])))
             .mount(&server).await;
         let c = DatamuseClient::with_base_url(dict_client(), server.uri());
