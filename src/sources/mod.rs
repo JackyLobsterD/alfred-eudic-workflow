@@ -8,6 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::{Cache, CacheKind};
 
+/// Separator embedded between an Urban definition and its example inside
+/// `DictEntry.definition`. Uses U+001F (unit separator) so it can never
+/// collide with real text; `preview.rs` splits on it.
+pub const URBAN_EXAMPLE_SEP: &str = "\u{1F}";
+
 pub mod urban;
 pub mod wordnik;
 pub mod util;

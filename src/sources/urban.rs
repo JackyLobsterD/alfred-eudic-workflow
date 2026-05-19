@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 
-use super::{DictEntry, DictionarySource, SourceError, SourceKind};
+use super::{DictEntry, DictionarySource, SourceError, SourceKind, URBAN_EXAMPLE_SEP};
 
 const BASE_URL: &str = "https://api.urbandictionary.com/v0/define";
 const TOP_N: usize = 3;
@@ -67,7 +67,7 @@ impl DictionarySource for UrbanClient {
         let entries = items.into_iter().take(TOP_N).map(|i| {
             let mut def = clean(&i.definition);
             if !i.example.trim().is_empty() {
-                def.push_str("  e.g. ");
+                def.push_str(URBAN_EXAMPLE_SEP);
                 def.push_str(&clean(&i.example));
             }
             DictEntry {

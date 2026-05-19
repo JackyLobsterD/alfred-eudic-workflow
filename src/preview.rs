@@ -195,7 +195,7 @@ pub fn write_preview(
     if let Some(e) = ecdict {
         let infl = e.exchange_info();
         let tags = e.tag_info();
-        let collins = e.collins.filter(|c| *c > 0).map(|c| "⭐️".repeat(c as usize));
+        let collins = e.collins.filter(|c| *c > 0).map(|c| "⭐️".repeat(c.min(5) as usize));
         if infl.is_some() || tags.is_some() || collins.is_some() {
             let _ = write!(body, "<section><h2>🔀 词形变化 / 标签</h2>");
             if let Some(i) = infl {
@@ -271,7 +271,7 @@ pub fn write_preview(
     if !urban.is_empty() {
         let _ = write!(body, "<section><h2>🔥 Urban Dictionary</h2><ol>");
         for u in urban {
-            let def = esc(&u.definition).replace("  e.g. ", "<br><em>e.g. ");
+            let def = esc(&u.definition).replace(crate::sources::URBAN_EXAMPLE_SEP, "<br><em>e.g. ");
             let _ = write!(body, "<li>{}", def);
             if let Some(x) = u.extra.as_deref().filter(|x| !x.is_empty()) {
                 let _ = write!(body, "<span class=\"meta\">{}</span>", esc(x));
@@ -373,5 +373,30 @@ mod tests {
         assert!(html.contains("维基百科"));
         assert!(!html.contains("英英释义"));
         assert!(!html.contains("同义"));
+    }
+
+    #[test]
+    fn urban_example_separator_renders_em_and_no_unclosed_on_literal_text() {
+        let cs = CardSources::default();
+        let urban = vec![DictEntry {
+            headword: "x".into(),
+            // a definition that literally contains "  e.g. " must NOT be split
+            definition: format!("plain  e.g. text{}an actual example", crate::sources::URBAN_EXAMPLE_SEP),
+            extra: None,
+        }];
+        let p = write_preview(&dir(), "x", None, &[], &urban, None, &cs).unwrap();
+        let html = std::fs::read_to_string(&p).unwrap();
+        // only ONE example break (from the real separator), the literal text survives
+        assert_eq!(html.matches("<br><em>e.g. ").count(), 1);
+        assert!(html.contains("plain  e.g. text"));
+        assert!(html.contains("an actual example"));
+    }
+
+    #[test]
+    fn llm_block_skipped_when_translations_empty() {
+        let cs = CardSources::default();
+        let r = crate::llm::LlmResult { translations: vec![], example: Some("ex".into()) };
+        // only LLM provided, but empty translations -> nothing to show -> None
+        assert!(write_preview(&dir(), "x", None, &[], &[], Some(&r), &cs).is_none());
     }
 }

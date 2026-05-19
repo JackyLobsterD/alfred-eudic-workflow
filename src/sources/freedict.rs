@@ -95,11 +95,11 @@ impl FreeDictClient {
                 let mut examples = Vec::new();
                 for d in m.definitions {
                     if !d.definition.is_empty() {
-                        definitions.push(d.definition);
+                        definitions.push(crate::sources::util::strip_tags(&d.definition));
                     }
                     if let Some(ex) = d.example {
                         if !ex.is_empty() {
-                            examples.push(ex);
+                            examples.push(crate::sources::util::strip_tags(&ex));
                         }
                     }
                 }

@@ -114,7 +114,7 @@ impl MwLearnersClient {
             ),
             None => (None, None),
         };
-        let data = MwLearnersData { pos: e.fl, phonetic, audio_url, short_defs: e.shortdef };
+        let data = MwLearnersData { pos: e.fl, phonetic, audio_url, short_defs: e.shortdef.iter().map(|d| crate::sources::util::strip_tags(d)).collect() };
         if data.short_defs.is_empty() && data.phonetic.is_none() {
             None
         } else {
