@@ -320,7 +320,10 @@ mod tests {
     use crate::sources::wikipedia::WikipediaSummary;
 
     fn dir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join("eudic-card-test");
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let i = N.fetch_add(1, Ordering::SeqCst);
+        let d = std::env::temp_dir().join(format!("eudic-card-test-{}-{}", std::process::id(), i));
         std::fs::create_dir_all(&d).unwrap();
         d
     }
