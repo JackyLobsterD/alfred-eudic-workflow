@@ -10,8 +10,8 @@ use alfred::updater::{Updater, version_compare};
 use crate::cache::{Cache, sqlite::SqliteCache};
 use crate::card::{gather_card_data, CardKeys};
 use crate::dictionary::{DictionaryConfig, DictionaryManager};
-use crate::http::{dict_client, llm_client};
-use crate::llm::{LlmClient, LlmError, fetch_with_cache_llm};
+use crate::http::dict_client;
+use crate::llm::LlmError;
 use crate::preview;
 use crate::render;
 use crate::sources::{
@@ -83,18 +83,31 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
         gather_card_data(cache.clone(), &spell_for_remote, bypass_cache, &card_keys),
     );
 
-    // LLM is now part of the always-shown card (English + Tech + Chinese).
-    // It runs for every word, gated only by length sanity. Alfred's
-    // input debounce + the 7-day SQLite cache keep call volume in check.
-    let llm_should_run = spell_for_remote.chars().count() <= MAX_LLM_SPELL_LEN;
-
-    let llm_outcome: Option<Result<crate::llm::LlmResult, LlmError>> = if llm_should_run {
-        if anthropic_key.is_empty() {
-            Some(Err(LlmError::NoApiKey))
-        } else {
-            let llm = LlmClient::new(llm_client(), anthropic_key);
-            Some(fetch_with_cache_llm(&llm, cache.clone(), &spell_for_remote, bypass_cache).await)
-        }
+    // LLM strategy: never block the inline list on LLM (it can take
+    // 15-25 s). Try a synchronous cache hit first; on miss, render the
+    // card with a loading placeholder + meta-refresh and spawn a
+    // background subprocess that fetches LLM and overwrites the card.
+    let llm_should_run = spell_for_remote.chars().count() <= MAX_LLM_SPELL_LEN
+        && !anthropic_key.is_empty();
+    let llm_key = spell_for_remote.trim().to_lowercase();
+    let cached_llm: Option<crate::llm::LlmResult> = if llm_should_run && !bypass_cache {
+        cache
+            .get(crate::cache::CacheKind::Llm, &llm_key)
+            .await
+            .and_then(|bytes| serde_json::from_slice::<crate::llm::LlmResult>(&bytes).ok())
+    } else {
+        None
+    };
+    // Loading mode: we want LLM, key is set, cache is missing/bypassed.
+    let llm_loading = llm_should_run && cached_llm.is_none();
+    // Build llm_outcome compatibly with the existing items-building
+    // code below: Some(Ok) when cache hit; None when loading-in-background
+    // (no list row); Some(Err(NoApiKey)) preserved when key is empty so
+    // the user still sees the configuration hint.
+    let llm_outcome: Option<Result<crate::llm::LlmResult, LlmError>> = if let Some(c) = &cached_llm {
+        Some(Ok(c.clone()))
+    } else if spell_for_remote.chars().count() <= MAX_LLM_SPELL_LEN && anthropic_key.is_empty() {
+        Some(Err(LlmError::NoApiKey))
     } else {
         None
     };
@@ -118,6 +131,7 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
             urban_slice,
             llm_ref,
             &card_extra,
+            llm_loading,
         )
     };
 
@@ -175,6 +189,15 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
 
     AlfredUtils::output(ScriptFilter::output());
 
+    // Fire-and-forget: when the LLM has nothing in the cache yet, the
+    // card was just written with a "loading" placeholder + meta-refresh.
+    // Spawn a detached subprocess that runs the slow LLM call and
+    // overwrites preview.html with the finished card. The Quick Look
+    // webview auto-reloads and picks up the new file.
+    if llm_loading {
+        spawn_card_update(&args);
+    }
+
     if let Some(cached) = updater.read_cached_release().await.ok().and_then(|o| o) {
         if !updater.cache_valid(&cached) {
             AlfredUtils::log("cache invalid");
@@ -185,6 +208,31 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
     }
 
     Ok(())
+}
+
+/// Spawn a detached `alfred-eudic card-update` subprocess. Inherits all
+/// env vars (cache dir, M-W/Wordnik/Anthropic keys) so the subprocess
+/// can hit the per-source cache for everything except the LLM.
+fn spawn_card_update(args: &SearchArgs) {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let mut cmd = Command::new("/usr/bin/nohup");
+    cmd.arg(&exe).arg("card-update");
+    if let Some(cf) = &args.completion_file {
+        cmd.args(["--completion-file", cf]);
+    }
+    if let Some(db) = &args.db_file {
+        cmd.args(["--db-file", db]);
+    }
+    cmd.arg(&args.spell);
+    cmd.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    match cmd.spawn() {
+        Ok(_) => AlfredUtils::log(format!("card-update subprocess spawned for {:?}", args.spell)),
+        Err(e) => AlfredUtils::log(format!("Failed to spawn card-update: {}", e)),
+    }
 }
 
 fn push_source_items(

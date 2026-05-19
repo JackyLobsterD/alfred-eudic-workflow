@@ -65,6 +65,11 @@ font-size:13px;}\
 
 /// Render the card to `<cache_dir>/preview.html`; return its path for use
 /// as an Alfred `quicklookurl`. `None` if there is nothing to show.
+/// When `llm_loading` is true, the `llm` argument is ignored, the Claude
+/// section renders a "still thinking" placeholder, and the HTML head
+/// gets `<meta http-equiv="refresh" content="2">` so the Quick Look
+/// webview auto-reloads until a background subprocess overwrites the
+/// file with the finished LLM data.
 #[allow(clippy::too_many_arguments)]
 pub fn write_preview(
     cache_dir: &Path,
@@ -74,6 +79,7 @@ pub fn write_preview(
     urban: &[DictEntry],
     llm: Option<&LlmResult>,
     extra: &CardSources,
+    llm_loading: bool,
 ) -> Option<String> {
     let mut body = String::new();
 
@@ -537,7 +543,18 @@ pub fn write_preview(
     // Claude — three sub-sections rendered in the user-approved order:
     // (1) English meaning + register examples, (2) Tech-domain analysis
     // (skipped when not applicable), (3) Chinese translations + usage.
-    if let Some(r) = llm {
+    if llm_loading {
+        // Loading placeholder; the page auto-refreshes (meta tag in
+        // <head> below) until a background subprocess overwrites this
+        // file with the finished card.
+        let _ = write!(
+            body,
+            "<section><h2>🤖 Claude</h2>\
+             <p><span class=\"src\">⏳ Still thinking…</span> \
+             this section will appear automatically in ~15–25 seconds. \
+             You can keep scrolling the rest of the card.</p></section>"
+        );
+    } else if let Some(r) = llm {
         let has_en = r.english.as_ref()
             .map(|e| !e.definitions.is_empty() || e.examples.iter().any(|x| !x.sentence.is_empty()))
             .unwrap_or(false);
@@ -639,10 +656,19 @@ pub fn write_preview(
     }
     links_html.push_str("</p>");
 
+    // Auto-reload every 2s while the LLM is still being fetched in a
+    // background subprocess. Removed once the subprocess overwrites
+    // this file with the finished card.
+    let refresh_meta = if llm_loading {
+        "<meta http-equiv=\"refresh\" content=\"2\">"
+    } else {
+        ""
+    };
     let html = format!(
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">{refresh}\
 <style>{STYLE}</style></head><body><h1>{}</h1>{ph}{links}{body}</body></html>",
         esc(spell),
+        refresh = refresh_meta,
         links = links_html,
     );
     let path = cache_dir.join("preview.html");
@@ -673,7 +699,7 @@ mod tests {
     #[test]
     fn empty_everything_is_none() {
         let cs = CardSources::default();
-        assert!(write_preview(&dir(), "x", None, &[], &[], None, &cs).is_none());
+        assert!(write_preview(&dir(), "x", None, &[], &[], None, &cs, false).is_none());
     }
 
     #[test]
@@ -694,7 +720,7 @@ mod tests {
             definition: "feeling <xref>joy</xref>".into(),
             extra: Some("adjective".into()),
         }];
-        let p = write_preview(&dir(), "ha<ppy", None, &wordnik, &[], None, &cs).unwrap();
+        let p = write_preview(&dir(), "ha<ppy", None, &wordnik, &[], None, &cs, false).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         // Look for unique section-header markers (with emoji) so we don't
         // collide with the always-on top "More on …" links bar which also
@@ -721,7 +747,7 @@ mod tests {
             ec_zh: vec!["adj. 灿烂的".into()],
             ..Default::default()
         });
-        let p = write_preview(&dir(), "splendid", None, &[], &[], None, &cs).unwrap();
+        let p = write_preview(&dir(), "splendid", None, &[], &[], None, &cs, false).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         assert!(!html.contains("📖 Wikipedia"), "wiki block must be absent when only youdao digest exists");
         assert!(!html.contains("Splendid may refer to:"), "disambiguation string must not leak in");
@@ -735,7 +761,7 @@ mod tests {
             extract: "Only wiki here".into(),
             url: None,
         });
-        let p = write_preview(&dir(), "t", None, &[], &[], None, &cs).unwrap();
+        let p = write_preview(&dir(), "t", None, &[], &[], None, &cs, false).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         assert!(html.contains("📖 Wikipedia"));
         assert!(!html.contains("🔤 English-English"));
@@ -751,7 +777,7 @@ mod tests {
             definition: format!("plain  e.g. text{}an actual example", crate::sources::URBAN_EXAMPLE_SEP),
             extra: None,
         }];
-        let p = write_preview(&dir(), "x", None, &[], &urban, None, &cs).unwrap();
+        let p = write_preview(&dir(), "x", None, &[], &urban, None, &cs, false).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
         // only ONE example break (from the real separator), the literal text survives
         assert_eq!(html.matches("<br><em>e.g. ").count(), 1);
@@ -764,6 +790,6 @@ mod tests {
         let cs = CardSources::default();
         let r = crate::llm::LlmResult { english: None, tech: None, chinese: None };
         // only LLM provided, but empty translations -> nothing to show -> None
-        assert!(write_preview(&dir(), "x", None, &[], &[], Some(&r), &cs).is_none());
+        assert!(write_preview(&dir(), "x", None, &[], &[], Some(&r), &cs, false).is_none());
     }
 }
