@@ -91,6 +91,24 @@ pub fn write_preview(
         .or_else(|| extra.freedict.as_ref().and_then(|f| f.phonetic.clone()))
         .or_else(|| extra.mw_learners.as_ref().and_then(|m| m.phonetic.clone()));
 
+    // 🤖 LLM — rendered FIRST so the most synthesized view of the word
+    // (definitions + register examples + tech context + Chinese) sits
+    // at the top of the card. The section body is an <iframe> pointing
+    // at claude.html so only this small region polls while the slow
+    // LLM is still running in a background subprocess; the rest of the
+    // card never flashes.
+    let want_llm = llm_loading
+        || llm.map(|r| !render_claude_inner(r).is_empty()).unwrap_or(false);
+    if want_llm {
+        let _ = write!(
+            body,
+            "<section><h2>🤖 LLM</h2>\
+             <iframe class=\"claude-frame\" src=\"claude.html\" \
+             onload=\"try{{this.style.height=this.contentWindow.document.body.scrollHeight+'px'}}catch(e){{}}\"></iframe>\
+             </section>"
+        );
+    }
+
     // Block 1: English-English — each source gets its own labelled
     // sub-section so the reader can scan by provenance.
     {
@@ -540,23 +558,6 @@ pub fn write_preview(
             let _ = write!(body, "</li>");
         }
         let _ = write!(body, "</ol></section>");
-    }
-
-    // Claude — embedded as an <iframe> pointing at claude.html. The
-    // iframe is the ONLY thing that polls/reloads while the LLM is
-    // still running, so the rest of the card never flashes. We skip
-    // emitting the section entirely when there's nothing to show
-    // (no loading state and no usable LLM content).
-    let want_claude = llm_loading
-        || llm.map(|r| !render_claude_inner(r).is_empty()).unwrap_or(false);
-    if want_claude {
-        let _ = write!(
-            body,
-            "<section><h2>🤖 Claude</h2>\
-             <iframe class=\"claude-frame\" src=\"claude.html\" \
-             onload=\"try{{this.style.height=this.contentWindow.document.body.scrollHeight+'px'}}catch(e){{}}\"></iframe>\
-             </section>"
-        );
     }
 
     if body.is_empty() {

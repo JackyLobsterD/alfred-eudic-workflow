@@ -155,7 +155,7 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
     if let Some(outcome) = llm_outcome {
         match outcome {
             Ok(r) => for it in render::render_llm(&r, &args.spell) { items.push(it); },
-            Err(LlmError::NoApiKey) => items.push(render::render_no_api_key("Claude")),
+            Err(LlmError::NoApiKey) => items.push(render::render_no_api_key("LLM")),
             Err(e) => items.push(render::render_error("LLM", &e.to_string(), &args.spell)),
         }
     }
