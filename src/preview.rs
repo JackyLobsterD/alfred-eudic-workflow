@@ -114,17 +114,29 @@ pub fn write_preview(
         dedup(&mut syn);
         dedup(&mut ant);
         dedup(&mut rel);
+        // Defence-in-depth cap: even after taking only the primary
+        // M-W sense, the union with Datamuse + FreeDict could explode
+        // on rare words. Render at most 30 of each list and note the
+        // truncation. 30 fits in roughly three lines visually.
+        let render_with_tail = |v: &[String]| -> String {
+            const CAP: usize = 30;
+            if v.len() <= CAP {
+                v.join(", ")
+            } else {
+                format!("{}, … (+{} more)", v[..CAP].join(", "), v.len() - CAP)
+            }
+        };
         let has_yd = yd_syno.map(|(s, r)| !s.is_empty() || !r.is_empty()).unwrap_or(false);
         if !syn.is_empty() || !ant.is_empty() || !rel.is_empty() || has_yd {
             let _ = write!(body, "<section><h2>🔄 同义 / 反义 / 联想</h2>");
             if !syn.is_empty() {
-                let _ = write!(body, "<p><b>同义</b> {}</p>", esc(&syn.join(", ")));
+                let _ = write!(body, "<p><b>同义</b> {}</p>", esc(&render_with_tail(&syn)));
             }
             if !ant.is_empty() {
-                let _ = write!(body, "<p><b>反义</b> {}</p>", esc(&ant.join(", ")));
+                let _ = write!(body, "<p><b>反义</b> {}</p>", esc(&render_with_tail(&ant)));
             }
             if !rel.is_empty() {
-                let _ = write!(body, "<p><b>联想</b> {}</p>", esc(&rel.join(", ")));
+                let _ = write!(body, "<p><b>联想</b> {}</p>", esc(&render_with_tail(&rel)));
             }
             if let Some((s, r)) = yd_syno {
                 for line in s.iter().chain(r.iter()) {

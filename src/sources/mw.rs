@@ -158,14 +158,20 @@ impl MwThesaurusClient {
             Ok(v) => v,
             Err(_) => return None,
         };
+        // M-W's `meta.syns` / `meta.ants` are sense-grouped: one group per
+        // sub-sense of the word. We take only the FIRST group of each
+        // entry — that is the primary sense — to avoid drowning the card
+        // in 100+ near-synonyms from rare senses. (For "splendid" the
+        // adjective entry has 3 groups summing to 135 syns; the first
+        // group alone is ~21.)
         let mut synonyms = Vec::new();
         let mut antonyms = Vec::new();
         for e in entries {
             if let Some(m) = e.meta {
-                for g in m.syns {
+                if let Some(g) = m.syns.into_iter().next() {
                     synonyms.extend(g);
                 }
-                for g in m.ants {
+                if let Some(g) = m.ants.into_iter().next() {
                     antonyms.extend(g);
                 }
             }
@@ -239,8 +245,27 @@ mod tests {
             .mount(&server).await;
         let c = MwThesaurusClient::with_base_url(dict_client(), "k".into(), format!("{}/thes", server.uri()));
         let d = c.fetch("test").await.unwrap();
-        assert_eq!(d.synonyms, vec!["essay", "experiment", "exam"]);
+        // Only the first sense-group is taken from each entry; "exam"
+        // belongs to a secondary sense and is dropped.
+        assert_eq!(d.synonyms, vec!["essay", "experiment"]);
         assert_eq!(d.antonyms, vec!["proof"]);
+    }
+
+    #[tokio::test]
+    async fn thesaurus_takes_first_group_from_each_entry() {
+        // Two entries, each with multiple sense-groups; we take the
+        // primary (first) group of each.
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/thes/x"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"meta": {"syns": [["a", "b"], ["c", "d"]], "ants": [["bad"], ["worse"]]}},
+                {"meta": {"syns": [["e"], ["f", "g"]], "ants": []}}
+            ])))
+            .mount(&server).await;
+        let c = MwThesaurusClient::with_base_url(dict_client(), "k".into(), format!("{}/thes", server.uri()));
+        let d = c.fetch("x").await.unwrap();
+        assert_eq!(d.synonyms, vec!["a", "b", "e"]); // first group of each entry
+        assert_eq!(d.antonyms, vec!["bad"]);          // first group of first entry only
     }
 
     #[tokio::test]
