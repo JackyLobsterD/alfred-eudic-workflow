@@ -217,7 +217,7 @@ pub fn write_preview(
                             };
                             let _ = write!(
                                 body,
-                                "<p class=\"src\">{}: {}</p>",
+                                "<p><span class=\"src\">{}:</span> {}</p>",
                                 esc(&label), esc(&g.join(", "))
                             );
                         }
@@ -228,7 +228,7 @@ pub fn write_preview(
                         let _ = write!(body, "<h4>🎯 Datamuse</h4>");
                         let _ = write!(
                             body,
-                            "<p class=\"src\">({}): {}</p>",
+                            "<p><span class=\"src\">({}):</span> {}</p>",
                             d.synonyms.len(), esc(&d.synonyms.join(", "))
                         );
                     }
@@ -237,7 +237,7 @@ pub fn write_preview(
                     let _ = write!(body, "<h4>📕 FreeDict</h4>");
                     let _ = write!(
                         body,
-                        "<p class=\"src\">({}): {}</p>",
+                        "<p><span class=\"src\">({}):</span> {}</p>",
                         fd_syn.len(), esc(&fd_syn.join(", "))
                     );
                 }
@@ -249,7 +249,7 @@ pub fn write_preview(
                             esc(&yd_url),
                         );
                         for line in &y.syno {
-                            let _ = write!(body, "<p class=\"src\">{}</p>", esc(line));
+                            let _ = write!(body, "<p>{}</p>", esc(line));
                         }
                     }
                 }
@@ -274,7 +274,7 @@ pub fn write_preview(
                             };
                             let _ = write!(
                                 body,
-                                "<p class=\"src\">{}: {}</p>",
+                                "<p><span class=\"src\">{}:</span> {}</p>",
                                 esc(&label), esc(&g.join(", "))
                             );
                         }
@@ -285,7 +285,7 @@ pub fn write_preview(
                         let _ = write!(body, "<h4>🎯 Datamuse</h4>");
                         let _ = write!(
                             body,
-                            "<p class=\"src\">({}): {}</p>",
+                            "<p><span class=\"src\">({}):</span> {}</p>",
                             d.antonyms.len(), esc(&d.antonyms.join(", "))
                         );
                     }
@@ -294,7 +294,7 @@ pub fn write_preview(
                     let _ = write!(body, "<h4>📕 FreeDict</h4>");
                     let _ = write!(
                         body,
-                        "<p class=\"src\">({}): {}</p>",
+                        "<p><span class=\"src\">({}):</span> {}</p>",
                         fd_ant.len(), esc(&fd_ant.join(", "))
                     );
                 }
@@ -308,7 +308,7 @@ pub fn write_preview(
                         let _ = write!(body, "<h4>🎯 Datamuse</h4>");
                         let _ = write!(
                             body,
-                            "<p class=\"src\">({}): {}</p>",
+                            "<p><span class=\"src\">({}):</span> {}</p>",
                             d.related.len(), esc(&d.related.join(", "))
                         );
                     }
@@ -321,7 +321,7 @@ pub fn write_preview(
                             esc(&yd_url),
                         );
                         for line in &y.rel_word {
-                            let _ = write!(body, "<p class=\"src\">{}</p>", esc(line));
+                            let _ = write!(body, "<p>{}</p>", esc(line));
                         }
                     }
                 }
