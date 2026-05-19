@@ -91,58 +91,139 @@ pub fn write_preview(
         }
     }
 
+    // Block 2: synonyms / antonyms / related — every source on its own
+    // labelled line; M-W's sense-grouped data renders one line per sense
+    // so a 100-synonym thesaurus entry becomes 3 readable groups rather
+    // than one wall of text. No content is dropped.
     {
-        let mut syn: Vec<String> = Vec::new();
-        let mut ant: Vec<String> = Vec::new();
-        let mut rel: Vec<String> = Vec::new();
-        if let Some(t) = &extra.mw_thesaurus {
-            syn.extend(t.synonyms.iter().cloned());
-            ant.extend(t.antonyms.iter().cloned());
-        }
-        if let Some(d) = &extra.datamuse {
-            syn.extend(d.synonyms.iter().cloned());
-            ant.extend(d.antonyms.iter().cloned());
-            rel.extend(d.related.iter().cloned());
-        }
-        if let Some(f) = &extra.freedict {
+        let mw = extra.mw_thesaurus.as_ref();
+        let dm = extra.datamuse.as_ref();
+        let fd = extra.freedict.as_ref();
+        let yd = extra.youdao.as_ref();
+
+        let mut fd_syn: Vec<String> = Vec::new();
+        let mut fd_ant: Vec<String> = Vec::new();
+        if let Some(f) = fd {
             for m in &f.meanings {
-                syn.extend(m.synonyms.iter().cloned());
-                ant.extend(m.antonyms.iter().cloned());
+                fd_syn.extend(m.synonyms.iter().cloned());
+                fd_ant.extend(m.antonyms.iter().cloned());
             }
         }
-        let yd_syno = extra.youdao.as_ref().map(|y| (&y.syno, &y.rel_word));
-        dedup(&mut syn);
-        dedup(&mut ant);
-        dedup(&mut rel);
-        // Defence-in-depth cap: even after taking only the primary
-        // M-W sense, the union with Datamuse + FreeDict could explode
-        // on rare words. Render at most 30 of each list and note the
-        // truncation. 30 fits in roughly three lines visually.
-        let render_with_tail = |v: &[String]| -> String {
-            const CAP: usize = 30;
-            if v.len() <= CAP {
-                v.join(", ")
-            } else {
-                format!("{}, … (+{} more)", v[..CAP].join(", "), v.len() - CAP)
-            }
-        };
-        let has_yd = yd_syno.map(|(s, r)| !s.is_empty() || !r.is_empty()).unwrap_or(false);
-        if !syn.is_empty() || !ant.is_empty() || !rel.is_empty() || has_yd {
+        dedup(&mut fd_syn);
+        dedup(&mut fd_ant);
+
+        let has_mw_syn = mw.map(|t| !t.synonym_groups.is_empty()).unwrap_or(false);
+        let has_mw_ant = mw.map(|t| !t.antonym_groups.is_empty()).unwrap_or(false);
+        let has_dm_syn = dm.map(|d| !d.synonyms.is_empty()).unwrap_or(false);
+        let has_dm_ant = dm.map(|d| !d.antonyms.is_empty()).unwrap_or(false);
+        let has_dm_rel = dm.map(|d| !d.related.is_empty()).unwrap_or(false);
+        let has_fd_syn = !fd_syn.is_empty();
+        let has_fd_ant = !fd_ant.is_empty();
+        let has_yd_syn = yd.map(|y| !y.syno.is_empty()).unwrap_or(false);
+        let has_yd_rel = yd.map(|y| !y.rel_word.is_empty()).unwrap_or(false);
+
+        let any = has_mw_syn || has_mw_ant || has_dm_syn || has_dm_ant
+            || has_dm_rel || has_fd_syn || has_fd_ant || has_yd_syn || has_yd_rel;
+
+        if any {
             let _ = write!(body, "<section><h2>🔄 同义 / 反义 / 联想</h2>");
-            if !syn.is_empty() {
-                let _ = write!(body, "<p><b>同义</b> {}</p>", esc(&render_with_tail(&syn)));
-            }
-            if !ant.is_empty() {
-                let _ = write!(body, "<p><b>反义</b> {}</p>", esc(&render_with_tail(&ant)));
-            }
-            if !rel.is_empty() {
-                let _ = write!(body, "<p><b>联想</b> {}</p>", esc(&render_with_tail(&rel)));
-            }
-            if let Some((s, r)) = yd_syno {
-                for line in s.iter().chain(r.iter()) {
-                    let _ = write!(body, "<p class=\"src\">有道: {}</p>", esc(line));
+
+            // ---- Synonyms (all sources) ----
+            if has_mw_syn || has_dm_syn || has_fd_syn || has_yd_syn {
+                let _ = write!(body, "<p><b>同义</b></p>");
+                if let Some(t) = mw {
+                    for (i, g) in t.synonym_groups.iter().enumerate() {
+                        if g.is_empty() { continue; }
+                        let label = if t.synonym_groups.len() > 1 {
+                            format!("M-W 义项 {}", i + 1)
+                        } else {
+                            "M-W".to_string()
+                        };
+                        let _ = write!(
+                            body,
+                            "<p class=\"src\">{} ({}): {}</p>",
+                            esc(&label), g.len(), esc(&g.join(", "))
+                        );
+                    }
+                }
+                if let Some(d) = dm {
+                    if !d.synonyms.is_empty() {
+                        let _ = write!(
+                            body,
+                            "<p class=\"src\">Datamuse ({}): {}</p>",
+                            d.synonyms.len(), esc(&d.synonyms.join(", "))
+                        );
+                    }
+                }
+                if has_fd_syn {
+                    let _ = write!(
+                        body,
+                        "<p class=\"src\">FreeDict ({}): {}</p>",
+                        fd_syn.len(), esc(&fd_syn.join(", "))
+                    );
+                }
+                if let Some(y) = yd {
+                    for line in &y.syno {
+                        let _ = write!(body, "<p class=\"src\">有道: {}</p>", esc(line));
+                    }
                 }
             }
+
+            // ---- Antonyms ----
+            if has_mw_ant || has_dm_ant || has_fd_ant {
+                let _ = write!(body, "<p><b>反义</b></p>");
+                if let Some(t) = mw {
+                    for (i, g) in t.antonym_groups.iter().enumerate() {
+                        if g.is_empty() { continue; }
+                        let label = if t.antonym_groups.len() > 1 {
+                            format!("M-W 义项 {}", i + 1)
+                        } else {
+                            "M-W".to_string()
+                        };
+                        let _ = write!(
+                            body,
+                            "<p class=\"src\">{} ({}): {}</p>",
+                            esc(&label), g.len(), esc(&g.join(", "))
+                        );
+                    }
+                }
+                if let Some(d) = dm {
+                    if !d.antonyms.is_empty() {
+                        let _ = write!(
+                            body,
+                            "<p class=\"src\">Datamuse ({}): {}</p>",
+                            d.antonyms.len(), esc(&d.antonyms.join(", "))
+                        );
+                    }
+                }
+                if has_fd_ant {
+                    let _ = write!(
+                        body,
+                        "<p class=\"src\">FreeDict ({}): {}</p>",
+                        fd_ant.len(), esc(&fd_ant.join(", "))
+                    );
+                }
+            }
+
+            // ---- Related / 派生 / 联想 ----
+            if has_dm_rel || has_yd_rel {
+                let _ = write!(body, "<p><b>联想 / 派生</b></p>");
+                if let Some(d) = dm {
+                    if !d.related.is_empty() {
+                        let _ = write!(
+                            body,
+                            "<p class=\"src\">Datamuse ({}): {}</p>",
+                            d.related.len(), esc(&d.related.join(", "))
+                        );
+                    }
+                }
+                if let Some(y) = yd {
+                    for line in &y.rel_word {
+                        let _ = write!(body, "<p class=\"src\">有道: {}</p>", esc(line));
+                    }
+                }
+            }
+
             let _ = write!(body, "</section>");
         }
     }

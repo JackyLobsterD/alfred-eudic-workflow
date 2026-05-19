@@ -22,10 +22,13 @@ pub struct MwLearnersData {
     pub short_defs: Vec<String>,
 }
 
+/// M-W Thesaurus data preserved in its native sense-grouped shape.
+/// Each inner `Vec<String>` is one sub-sense group; the preview layer
+/// renders each on its own labelled line so the structure is visible.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct MwThesaurusData {
-    pub synonyms: Vec<String>,
-    pub antonyms: Vec<String>,
+    pub synonym_groups: Vec<Vec<String>>,
+    pub antonym_groups: Vec<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -158,28 +161,29 @@ impl MwThesaurusClient {
             Ok(v) => v,
             Err(_) => return None,
         };
-        // M-W's `meta.syns` / `meta.ants` are sense-grouped: one group per
-        // sub-sense of the word. We take only the FIRST group of each
-        // entry — that is the primary sense — to avoid drowning the card
-        // in 100+ near-synonyms from rare senses. (For "splendid" the
-        // adjective entry has 3 groups summing to 135 syns; the first
-        // group alone is ~21.)
-        let mut synonyms = Vec::new();
-        let mut antonyms = Vec::new();
+        // Preserve M-W's sense-grouped structure (one Vec per sub-sense).
+        // Empty inner groups are dropped; the preview renders each group
+        // as a separate labelled line so the user can see the structure.
+        let mut synonym_groups: Vec<Vec<String>> = Vec::new();
+        let mut antonym_groups: Vec<Vec<String>> = Vec::new();
         for e in entries {
             if let Some(m) = e.meta {
-                if let Some(g) = m.syns.into_iter().next() {
-                    synonyms.extend(g);
+                for g in m.syns {
+                    if !g.is_empty() {
+                        synonym_groups.push(g);
+                    }
                 }
-                if let Some(g) = m.ants.into_iter().next() {
-                    antonyms.extend(g);
+                for g in m.ants {
+                    if !g.is_empty() {
+                        antonym_groups.push(g);
+                    }
                 }
             }
         }
-        if synonyms.is_empty() && antonyms.is_empty() {
+        if synonym_groups.is_empty() && antonym_groups.is_empty() {
             None
         } else {
-            Some(MwThesaurusData { synonyms, antonyms })
+            Some(MwThesaurusData { synonym_groups, antonym_groups })
         }
     }
 }
@@ -245,27 +249,35 @@ mod tests {
             .mount(&server).await;
         let c = MwThesaurusClient::with_base_url(dict_client(), "k".into(), format!("{}/thes", server.uri()));
         let d = c.fetch("test").await.unwrap();
-        // Only the first sense-group is taken from each entry; "exam"
-        // belongs to a secondary sense and is dropped.
-        assert_eq!(d.synonyms, vec!["essay", "experiment"]);
-        assert_eq!(d.antonyms, vec!["proof"]);
+        // Sense-grouped structure is preserved — every group survives.
+        assert_eq!(d.synonym_groups, vec![vec!["essay".to_string(), "experiment".into()], vec!["exam".into()]]);
+        assert_eq!(d.antonym_groups, vec![vec!["proof".to_string()]]);
     }
 
     #[tokio::test]
-    async fn thesaurus_takes_first_group_from_each_entry() {
-        // Two entries, each with multiple sense-groups; we take the
-        // primary (first) group of each.
+    async fn thesaurus_keeps_all_sense_groups_across_entries() {
+        // Two entries, each with multiple sense-groups: every non-empty
+        // group is kept in source order.
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path("/thes/x"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
                 {"meta": {"syns": [["a", "b"], ["c", "d"]], "ants": [["bad"], ["worse"]]}},
-                {"meta": {"syns": [["e"], ["f", "g"]], "ants": []}}
+                {"meta": {"syns": [["e"], ["f", "g"], []], "ants": []}}
             ])))
             .mount(&server).await;
         let c = MwThesaurusClient::with_base_url(dict_client(), "k".into(), format!("{}/thes", server.uri()));
         let d = c.fetch("x").await.unwrap();
-        assert_eq!(d.synonyms, vec!["a", "b", "e"]); // first group of each entry
-        assert_eq!(d.antonyms, vec!["bad"]);          // first group of first entry only
+        assert_eq!(
+            d.synonym_groups,
+            vec![
+                vec!["a".to_string(), "b".into()],
+                vec!["c".into(), "d".into()],
+                vec!["e".into()],
+                vec!["f".into(), "g".into()],
+            ],
+            "empty groups dropped; non-empty groups preserved in order"
+        );
+        assert_eq!(d.antonym_groups, vec![vec!["bad".to_string()], vec!["worse".into()]]);
     }
 
     #[tokio::test]
