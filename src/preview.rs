@@ -534,33 +534,90 @@ pub fn write_preview(
         let _ = write!(body, "</ol></section>");
     }
 
+    // Claude — three sub-sections rendered in the user-approved order:
+    // (1) English meaning + register examples, (2) Tech-domain analysis
+    // (skipped when not applicable), (3) Chinese translations + usage.
     if let Some(r) = llm {
-        if !r.translations.is_empty() {
-            let _ = write!(body, "<section><h2>🤖 Claude translation</h2>");
-            let _ = write!(body, "<p>{}</p>", esc(&r.translations.join("; ")));
-            let usable: Vec<&crate::llm::response::LlmExample> =
-                r.examples.iter().filter(|e| !e.sentence.is_empty()).collect();
-            if !usable.is_empty() {
-                let _ = write!(body, "<h3>Examples by register</h3><ul>");
-                for ex in usable {
-                    let label = match ex.scenario.as_str() {
-                        "internet" => "🌍 Internet",
-                        "software" => "💻 Software",
-                        "casual"   => "💬 Casual",
-                        "office"   => "🏢 Office",
-                        "email"    => "✉️ Email",
-                        "slack"    => "💬 Slack",
-                        other      => other,
-                    };
-                    let _ = write!(
-                        body,
-                        "<li><span class=\"src\">{}</span> {}</li>",
-                        esc(label),
-                        esc(&ex.sentence),
-                    );
+        let has_en = r.english.as_ref()
+            .map(|e| !e.definitions.is_empty() || e.examples.iter().any(|x| !x.sentence.is_empty()))
+            .unwrap_or(false);
+        let has_tech = r.tech.as_ref()
+            .map(|t| t.is_tech_term && (!t.domains.is_empty() || t.explanation.as_deref().map(|s| !s.is_empty()).unwrap_or(false)))
+            .unwrap_or(false);
+        let has_zh = r.chinese.as_ref()
+            .map(|c| !c.translations.is_empty() || c.usage_notes.as_deref().map(|s| !s.is_empty()).unwrap_or(false))
+            .unwrap_or(false);
+
+        if has_en || has_tech || has_zh {
+            let _ = write!(body, "<section><h2>🤖 Claude</h2>");
+
+            // (1) English
+            if let Some(en) = &r.english {
+                if has_en {
+                    let _ = write!(body, "<h3>📖 English meaning</h3>");
+                    if !en.definitions.is_empty() {
+                        let _ = write!(body, "<ol>");
+                        for d in &en.definitions {
+                            let _ = write!(body, "<li>{}</li>", esc(d));
+                        }
+                        let _ = write!(body, "</ol>");
+                    }
+                    let usable: Vec<&crate::llm::response::LlmExample> =
+                        en.examples.iter().filter(|e| !e.sentence.is_empty()).collect();
+                    if !usable.is_empty() {
+                        let _ = write!(body, "<p><span class=\"src\">Examples by register</span></p><ul>");
+                        for ex in usable {
+                            let label = match ex.scenario.as_str() {
+                                "internet" => "🌍 Internet",
+                                "software" => "💻 Software",
+                                "casual"   => "💬 Casual",
+                                "office"   => "🏢 Office",
+                                "email"    => "✉️ Email",
+                                "slack"    => "💬 Slack",
+                                other      => other,
+                            };
+                            let _ = write!(
+                                body,
+                                "<li><span class=\"src\">{}</span> {}</li>",
+                                esc(label),
+                                esc(&ex.sentence),
+                            );
+                        }
+                        let _ = write!(body, "</ul>");
+                    }
                 }
-                let _ = write!(body, "</ul>");
             }
+
+            // (2) Tech-domain analysis
+            if let Some(t) = &r.tech {
+                if has_tech {
+                    let _ = write!(body, "<h3>💻 Tech use</h3>");
+                    if !t.domains.is_empty() {
+                        let _ = write!(
+                            body,
+                            "<p><span class=\"src\">Used in:</span> {}</p>",
+                            esc(&t.domains.join(" · ")),
+                        );
+                    }
+                    if let Some(expl) = t.explanation.as_deref().filter(|s| !s.is_empty()) {
+                        let _ = write!(body, "<p>{}</p>", esc(expl));
+                    }
+                }
+            }
+
+            // (3) Chinese
+            if let Some(zh) = &r.chinese {
+                if has_zh {
+                    let _ = write!(body, "<h3>🀄 Chinese</h3>");
+                    if !zh.translations.is_empty() {
+                        let _ = write!(body, "<p>{}</p>", esc(&zh.translations.join("; ")));
+                    }
+                    if let Some(u) = zh.usage_notes.as_deref().filter(|s| !s.is_empty()) {
+                        let _ = write!(body, "<p><span class=\"src\">用法:</span> {}</p>", esc(u));
+                    }
+                }
+            }
+
             let _ = write!(body, "</section>");
         }
     }
@@ -705,7 +762,7 @@ mod tests {
     #[test]
     fn llm_block_skipped_when_translations_empty() {
         let cs = CardSources::default();
-        let r = crate::llm::LlmResult { translations: vec![], examples: vec![] };
+        let r = crate::llm::LlmResult { english: None, tech: None, chinese: None };
         // only LLM provided, but empty translations -> nothing to show -> None
         assert!(write_preview(&dir(), "x", None, &[], &[], Some(&r), &cs).is_none());
     }

@@ -20,17 +20,17 @@ use crate::sources::{
 };
 use crate::{GITHUB_REPO, SEARCH_LIMIT, SearchArgs, WORKFLOW_ASSET_NAME};
 
-const LLM_TRIGGER_THRESHOLD: usize = 8;
 const MAX_LLM_SPELL_LEN: usize = 50;
 
 pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::Error>> {
     ScriptFilter::reset();
 
-    // A leading `!` forces the LLM for this word regardless of how many
-    // Wordnik senses came back (Alfred script-filter modifier keys can't
-    // re-run the filter, so a query sigil is the practical equivalent).
+    // A leading `!` is a "refresh / bypass cache" sigil. LLM is always
+    // shown now (so `!` no longer forces it), but `!` still lets the user
+    // explicitly drop the 7-day cache for the current query to refetch
+    // everything fresh.
     let trimmed = args.spell.trim();
-    let force_llm = trimmed.starts_with('!');
+    let bypass_from_prefix = trimmed.starts_with('!');
     args.spell = trimmed.strip_prefix('!').unwrap_or(trimmed).trim().to_string();
 
     if args.spell.len() <= 1 {
@@ -40,7 +40,8 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
     }
 
     let t1 = Instant::now();
-    let bypass_cache = env::var("BYPASS_CACHE").ok().as_deref() == Some("1");
+    let bypass_cache = bypass_from_prefix
+        || env::var("BYPASS_CACHE").ok().as_deref() == Some("1");
     let wordnik_key = env::var("WORDNIK_API_KEY").unwrap_or_default();
     let anthropic_key = env::var("ANTHROPIC_API_KEY").unwrap_or_default();
     let mw_learners_key = env::var("MW_LEARNERS_API_KEY").unwrap_or_default();
@@ -82,13 +83,10 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
         gather_card_data(cache.clone(), &spell_for_remote, bypass_cache, &card_keys),
     );
 
-    // Decide whether to invoke LLM.
-    let llm_should_run = (force_llm
-        || match &wordnik_res {
-            Ok(v) => v.len() < LLM_TRIGGER_THRESHOLD,
-            Err(_) => true,
-        })
-        && spell_for_remote.chars().count() <= MAX_LLM_SPELL_LEN;
+    // LLM is now part of the always-shown card (English + Tech + Chinese).
+    // It runs for every word, gated only by length sanity. Alfred's
+    // input debounce + the 7-day SQLite cache keep call volume in check.
+    let llm_should_run = spell_for_remote.chars().count() <= MAX_LLM_SPELL_LEN;
 
     let llm_outcome: Option<Result<crate::llm::LlmResult, LlmError>> = if llm_should_run {
         if anthropic_key.is_empty() {

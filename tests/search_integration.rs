@@ -82,7 +82,7 @@ async fn llm_cache_hit_avoids_second_call() {
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "stop_reason": "end_turn",
-            "content": [{"type": "text", "text": "{\"translations\":[\"机缘\"]}"}]
+            "content": [{"type": "text", "text": "{\"chinese\":{\"translations\":[\"机缘\"]}}"}]
         })))
         .expect(1)
         .mount(&server)

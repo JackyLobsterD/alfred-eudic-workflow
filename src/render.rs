@@ -40,20 +40,30 @@ pub fn render_dict(entries: &[DictEntry], kind: SourceKind) -> Vec<Item> {
 }
 
 pub fn render_llm(result: &LlmResult, spell: &str) -> Vec<Item> {
-    if result.translations.is_empty() {
+    // List row needs at least Chinese translations to make sense. If the
+    // LLM only returned English / tech sections, skip — the card still
+    // shows them, but the inline row has nothing concise to display.
+    let translations = result
+        .chinese
+        .as_ref()
+        .map(|c| c.translations.clone())
+        .unwrap_or_default();
+    if translations.is_empty() {
         return Vec::new();
     }
-    // One row in the Alfred list. The Quick Look card shows the full
-    // six-scenario example set; here we only need a representative
-    // subtitle. Prefer the "casual" register; otherwise the first
-    // example; otherwise just the translations.
-    let joined = result.translations.join("；");
+    let joined = translations.join("；");
+    // Subtitle: prefer the "casual" English example if present, else
+    // the first example; otherwise just translations.
     let preferred_ex: Option<&str> = result
-        .examples
-        .iter()
-        .find(|e| e.scenario == "casual")
-        .or_else(|| result.examples.first())
-        .map(|e| e.sentence.as_str())
+        .english
+        .as_ref()
+        .map(|e| {
+            e.examples
+                .iter()
+                .find(|x| x.scenario == "casual")
+                .or_else(|| e.examples.first())
+        })
+        .and_then(|x| x.map(|e| e.sentence.as_str()))
         .filter(|s| !s.is_empty());
     let subtitle = match preferred_ex {
         Some(ex) => workflow_utils::aligned_text(&joined, ex),
@@ -131,13 +141,20 @@ mod tests {
 
     #[test]
     fn llm_renders_translations() {
-        use crate::llm::response::LlmExample;
+        use crate::llm::response::{LlmChinese, LlmEnglish, LlmExample};
         let r = LlmResult {
-            translations: vec!["机缘".to_string(), "巧合".to_string()],
-            examples: vec![
-                LlmExample { scenario: "internet".into(), sentence: "online x".into() },
-                LlmExample { scenario: "casual".into(), sentence: "What a serendipity!".into() },
-            ],
+            english: Some(LlmEnglish {
+                definitions: vec!["a fortunate accident".into()],
+                examples: vec![
+                    LlmExample { scenario: "internet".into(), sentence: "online x".into() },
+                    LlmExample { scenario: "casual".into(), sentence: "What a serendipity!".into() },
+                ],
+            }),
+            tech: None,
+            chinese: Some(LlmChinese {
+                translations: vec!["机缘".into(), "巧合".into()],
+                usage_notes: None,
+            }),
         };
         let items = render_llm(&r, "serendipity");
         assert_eq!(items.len(), 1);
@@ -145,7 +162,7 @@ mod tests {
         let subtitle = json.get("subtitle").and_then(|v| v.as_str()).unwrap_or("");
         assert!(subtitle.contains("机缘"));
         assert!(subtitle.contains("巧合"));
-        // Subtitle prefers the "casual" example over the first one.
+        // Subtitle prefers the "casual" English example over the first one.
         assert!(subtitle.contains("What a serendipity!"));
     }
 

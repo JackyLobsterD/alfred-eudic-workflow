@@ -20,7 +20,10 @@ static LLM_CLIENT: Lazy<Arc<Client>> = Lazy::new(|| {
     Arc::new(
         Client::builder()
             .user_agent(USER_AGENT)
-            .timeout(Duration::from_secs(8))
+            // Sonnet 4.6 producing English defs + 6 register examples
+            // + tech analysis + Chinese can take 15-20 s end-to-end.
+            // Cached responses (the common case) are <50 ms.
+            .timeout(Duration::from_secs(30))
             .build()
             .expect("llm reqwest client must build"),
     )

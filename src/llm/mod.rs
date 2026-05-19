@@ -12,10 +12,11 @@ pub mod response;
 pub use response::LlmResult;
 
 const ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
-const MODEL: &str = "claude-haiku-4-5";
-// Room for 1-3 Chinese translations plus 6 English example sentences
-// (~20 words each), with headroom for the JSON envelope.
-const MAX_TOKENS: u32 = 1000;
+const MODEL: &str = "claude-sonnet-4-6";
+// Room for three sections: English definitions + 6 example sentences,
+// tech-domain analysis with explanation, and Chinese translations with
+// usage notes. Conservatively budgeted; Haiku is cheap.
+const MAX_TOKENS: u32 = 2000;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 pub struct LlmClient {
@@ -158,15 +159,14 @@ mod tests {
             .and(path("/v1/messages"))
             .and(header("x-api-key", "k"))
             .respond_with(ResponseTemplate::new(200).set_body_json(
-                ok_envelope(r#"{"translations":["机缘"],"examples":[{"scenario":"casual","sentence":"What serendipity!"}]}"#)
+                ok_envelope(r#"{"chinese":{"translations":["机缘"]},"english":{"definitions":["a happy accident"]}}"#)
             ))
             .mount(&server)
             .await;
         let client = LlmClient::with_endpoint(llm_client(), "k".into(), format!("{}/v1/messages", server.uri()));
         let r = client.translate("serendipity").await.unwrap();
-        assert_eq!(r.translations, vec!["机缘"]);
-        assert_eq!(r.examples.len(), 1);
-        assert_eq!(r.examples[0].sentence, "What serendipity!");
+        assert_eq!(r.chinese.as_ref().unwrap().translations, vec!["机缘"]);
+        assert_eq!(r.english.as_ref().unwrap().definitions, vec!["a happy accident"]);
     }
 
     #[tokio::test]
