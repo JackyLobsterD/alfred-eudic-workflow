@@ -57,7 +57,7 @@ impl WiktionaryClient {
             let defs: Vec<String> = d
                 .definitions
                 .iter()
-                .map(|s| strip_tags(&s.definition))
+                .map(|s| strip_tags(&mark_transclusions(&s.definition)))
                 .filter(|s| !s.is_empty())
                 .collect();
             if !defs.is_empty() {
@@ -72,12 +72,65 @@ impl WiktionaryClient {
     }
 }
 
+/// Wiktionary often wraps context labels (e.g. "(poker slang)") in
+/// `<span typeof="mw:Transclusion">` whose actual text is supplied
+/// client-side by a MediaWiki template — the REST API returns an empty
+/// span. Replace those empty placeholders with a small `(…)` marker
+/// so the user can see that a context label is missing and click
+/// through to Wiktionary for the full version (rather than seeing a
+/// stripped-down definition that looks more authoritative than it is).
+fn mark_transclusions(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    let mut rest = s;
+    while let Some(pos) = rest.find("<span") {
+        out.push_str(&rest[..pos]);
+        let tail = &rest[pos..];
+        // Find the end of this opening tag.
+        let close = match tail.find('>') {
+            Some(c) => c,
+            None => { out.push_str(tail); rest = ""; break; }
+        };
+        let open_tag = &tail[..=close];
+        let after_open = &tail[close + 1..];
+        if open_tag.contains("mw:Transclusion") {
+            // Look for the matching </span>.
+            if let Some(end) = after_open.find("</span>") {
+                let inner = &after_open[..end];
+                if inner.trim().is_empty() {
+                    out.push_str("(…)");
+                    rest = &after_open[end + "</span>".len()..];
+                    continue;
+                }
+            }
+        }
+        out.push_str(open_tag);
+        rest = after_open;
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::http::dict_client;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn mark_transclusions_replaces_empty_template_span() {
+        let raw = "<span typeof=\"mw:Transclusion\"></span> <a>Four of a kind</a>.";
+        let r = strip_tags(&mark_transclusions(raw));
+        assert!(r.starts_with("(…)"), "expected (…) marker, got: {}", r);
+        assert!(r.contains("Four of a kind"));
+    }
+
+    #[test]
+    fn mark_transclusions_preserves_non_template_spans() {
+        let raw = "<span class=\"plain\">regular text</span> body";
+        let r = strip_tags(&mark_transclusions(raw));
+        assert_eq!(r, "regular text body");
+    }
 
     #[tokio::test]
     async fn parses_english_section_and_strips_tags() {

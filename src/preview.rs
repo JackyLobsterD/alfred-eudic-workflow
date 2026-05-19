@@ -172,16 +172,27 @@ pub fn write_preview(
                 let _ = write!(body, "</ol>");
             }
 
+            // Wordnik (block above) is shown in full because it's
+            // already an aggregated, deduplicated view of multiple
+            // sub-sources. The remaining three sources are capped at
+            // 5 entries each to keep the section scannable; the user
+            // can click each source's link to see the full set on the
+            // origin site.
+            const SECONDARY_CAP: usize = 5;
+
             if let Some(m) = &extra.mw_learners {
                 if !m.short_defs.is_empty() {
                     let _ = write!(body, "<h3>📗 <a href=\"{}\">M-W Learner's →</a></h3><ol>", esc(&ml_url));
                     let pos = m.pos.clone().unwrap_or_default();
-                    for d in &m.short_defs {
+                    for d in m.short_defs.iter().take(SECONDARY_CAP) {
                         let _ = write!(body, "<li>{}", esc(d));
                         if !pos.is_empty() {
                             let _ = write!(body, "<span class=\"meta\">{}</span>", esc(&pos));
                         }
                         let _ = write!(body, "</li>");
+                    }
+                    if m.short_defs.len() > SECONDARY_CAP {
+                        let _ = write!(body, "<li><span class=\"src\">… (+{} more — click M-W Learner's above)</span></li>", m.short_defs.len() - SECONDARY_CAP);
                     }
                     let _ = write!(body, "</ol>");
                 }
@@ -190,14 +201,22 @@ pub fn write_preview(
             if let Some(w) = &extra.wiktionary {
                 if !w.senses.is_empty() {
                     let _ = write!(body, "<h3>📕 <a href=\"{}\">Wiktionary →</a></h3><ol>", esc(&wt_url));
-                    for s in &w.senses {
+                    let mut shown = 0usize;
+                    let mut total = 0usize;
+                    for s in &w.senses { total += s.definitions.len(); }
+                    'wikt: for s in &w.senses {
                         for d in &s.definitions {
+                            if shown >= SECONDARY_CAP { break 'wikt; }
                             let _ = write!(body, "<li>{}", esc(d));
                             if !s.pos.is_empty() {
                                 let _ = write!(body, "<span class=\"meta\">{}</span>", esc(&s.pos));
                             }
                             let _ = write!(body, "</li>");
+                            shown += 1;
                         }
+                    }
+                    if total > SECONDARY_CAP {
+                        let _ = write!(body, "<li><span class=\"src\">… (+{} more — click Wiktionary above)</span></li>", total - SECONDARY_CAP);
                     }
                     let _ = write!(body, "</ol>");
                 }
@@ -206,14 +225,22 @@ pub fn write_preview(
             if let Some(f) = &extra.freedict {
                 if has_fd {
                     let _ = write!(body, "<h3>📓 FreeDict</h3><ol>");
-                    for m in &f.meanings {
+                    let mut shown = 0usize;
+                    let mut total = 0usize;
+                    for m in &f.meanings { total += m.definitions.len(); }
+                    'fd: for m in &f.meanings {
                         for d in &m.definitions {
+                            if shown >= SECONDARY_CAP { break 'fd; }
                             let _ = write!(body, "<li>{}", esc(d));
                             if !m.pos.is_empty() {
                                 let _ = write!(body, "<span class=\"meta\">{}</span>", esc(&m.pos));
                             }
                             let _ = write!(body, "</li>");
+                            shown += 1;
                         }
+                    }
+                    if total > SECONDARY_CAP {
+                        let _ = write!(body, "<li><span class=\"src\">… (+{} more on dictionaryapi.dev)</span></li>", total - SECONDARY_CAP);
                     }
                     let _ = write!(body, "</ol>");
                 }
