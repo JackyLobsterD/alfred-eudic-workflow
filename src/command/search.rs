@@ -133,11 +133,6 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
             &card_extra,
             llm_loading,
         );
-        // Always write claude.html alongside — preview.html embeds it via
-        // an <iframe>. When loading, the file has the placeholder + its
-        // own meta-refresh; when we already have a cached LLM, the file
-        // contains the finished card with no refresh.
-        let _ = preview::write_claude_html(&dir, llm_ref, llm_loading);
         path
     };
 
