@@ -26,9 +26,37 @@ pub struct LlmTech {
     /// "agent design", "JavaScript", "product", "marketing", ...).
     #[serde(default)]
     pub domains: Vec<String>,
-    /// English explanation of the tech meaning(s), if applicable.
-    #[serde(default)]
-    pub explanation: Option<String>,
+    /// English explanation of the tech meaning(s), split into one or
+    /// more paragraphs. Each entry renders as its own `<p>` so the
+    /// reader can scan distinct contexts/scenarios separately.
+    #[serde(default, deserialize_with = "deserialize_explanation")]
+    pub explanation: Vec<String>,
+}
+
+/// Tolerate older / simpler LLM outputs that returned `explanation` as
+/// a single string (or null). Always coerce into a `Vec<String>`.
+fn deserialize_explanation<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Deserialize;
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::Array(arr) => arr
+            .into_iter()
+            .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+            .filter(|s| !s.is_empty())
+            .collect(),
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                Vec::new()
+            } else {
+                vec![s.to_string()]
+            }
+        }
+        _ => Vec::new(),
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

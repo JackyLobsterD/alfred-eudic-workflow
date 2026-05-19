@@ -85,7 +85,10 @@ p{margin:6px 0;}\
 .wiki-link{display:inline-block;margin-top:10px;padding:6px 12px;\
 background:#2a3b4d;border-radius:4px;color:#9cf;text-decoration:none;\
 font-size:13px;}\
-.wiki-link:hover{background:#3a4b5d;color:#cdf;}";
+.wiki-link:hover{background:#3a4b5d;color:#cdf;}\
+.img-grid{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;}\
+.img-grid img{display:block;height:120px;width:auto;border-radius:4px;\
+background:#222;}";
 
 /// Render the card to `<cache_dir>/preview.html`; return its path for use
 /// as an Alfred `quicklookurl`. `None` if there is nothing to show.
@@ -503,6 +506,13 @@ pub fn write_preview(
     if let Some(w) = &extra.wikipedia {
         if !w.extract.is_empty() {
             let _ = write!(body, "<section><h2>📖 Wikipedia</h2><p>{}</p>", esc(&w.extract));
+            if !w.images.is_empty() {
+                let _ = write!(body, "<div class=\"img-grid\">");
+                for url in &w.images {
+                    let _ = write!(body, "<img src=\"{}\" loading=\"lazy\">", esc(url));
+                }
+                let _ = write!(body, "</div>");
+            }
             if let Some(u) = &w.url {
                 let _ = write!(
                     body,
@@ -640,7 +650,7 @@ fn render_claude_inner(r: &LlmResult) -> String {
         .map(|e| !e.definitions.is_empty() || e.examples.iter().any(|x| !x.sentence.is_empty()))
         .unwrap_or(false);
     let has_tech = r.tech.as_ref()
-        .map(|t| t.is_tech_term && (!t.domains.is_empty() || t.explanation.as_deref().map(|s| !s.is_empty()).unwrap_or(false)))
+        .map(|t| t.is_tech_term && (!t.domains.is_empty() || !t.explanation.is_empty()))
         .unwrap_or(false);
     let has_zh = r.chinese.as_ref()
         .map(|c| !c.translations.is_empty() || c.usage_notes.as_deref().map(|s| !s.is_empty()).unwrap_or(false))
@@ -693,8 +703,8 @@ fn render_claude_inner(r: &LlmResult) -> String {
                     esc(&t.domains.join(" · ")),
                 );
             }
-            if let Some(expl) = t.explanation.as_deref().filter(|s| !s.is_empty()) {
-                let _ = write!(body, "<p>{}</p>", esc(expl));
+            for para in t.explanation.iter().filter(|p| !p.trim().is_empty()) {
+                let _ = write!(body, "<p>{}</p>", esc(para));
             }
         }
     }
@@ -750,6 +760,7 @@ mod tests {
             title: "Happy".into(),
             extract: "Happiness <is> good".into(),
             url: Some("https://w/Happy".into()),
+            images: vec![],
         });
         let wordnik = vec![DictEntry {
             headword: "happy".into(),
@@ -796,6 +807,7 @@ mod tests {
             title: "T".into(),
             extract: "Only wiki here".into(),
             url: None,
+            images: vec![],
         });
         let p = write_preview(&dir(), "t", None, &[], &[], None, &cs, false).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();

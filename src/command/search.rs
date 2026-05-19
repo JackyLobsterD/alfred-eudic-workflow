@@ -160,8 +160,17 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
     for it in ecdict_iter { items.push(it); }
 
     if let Some(ref ql) = quicklook {
-        for it in &mut items {
+        // Items[0] is the fallback "Type enter to check in Eudic" row
+        // and keeps its original `arg` (the word) so Enter on it
+        // triggers the Eudic lookup. Every OTHER row gets its `arg`
+        // overridden to the preview's file path: pressing Enter opens
+        // the per-spell preview HTML in the user's default browser
+        // (handled by search_eudic.sh).
+        for (i, it) in items.iter_mut().enumerate() {
             it.quicklookurl = Some(ql.clone());
+            if i != 0 {
+                it.arg = Some(ql.clone());
+            }
         }
     }
 

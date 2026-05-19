@@ -20,7 +20,7 @@ pub fn user(spell: &str) -> String {
          \"tech\": {{\n\
          \"is_tech_term\": false,\n\
          \"domains\": [],\n\
-         \"explanation\": null\n\
+         \"explanation\": []\n\
          }},\n\
          \"chinese\": {{\n\
          \"translations\": [\"释义1\",\"释义2\"],\n\
@@ -44,9 +44,12 @@ pub fn user(spell: &str) -> String {
          free-form names, fine-grained (e.g. \"SQL\", \"system architecture\", \"agent design\", \
          \"JavaScript\", \"React\", \"product management\", \"DevOps\", \"SRE\", \"security\", \
          \"data engineering\", \"ML\", \"marketing\", \"UX\", \"growth\", \"crypto\", …). Pick the \
-         domains that are most accurate; you decide the granularity. Then fill `explanation` with \
-         a concise English description of the tech meaning(s) (<=60 words).\n\
-           - If no: set `is_tech_term` to false, `domains` to [], `explanation` to null.\n\
+         domains that are most accurate; you decide the granularity. Then fill `explanation` as \
+         an ARRAY of 1-4 short paragraphs (each <=40 words). If the word has distinct meanings in \
+         different tech contexts (e.g. \"book\" in product mgmt vs. CI/CD vs. calendar APIs), use \
+         one paragraph per distinct meaning so the reader can scan them. If a single coherent \
+         meaning suffices, return one paragraph.\n\
+           - If no: set `is_tech_term` to false, `domains` to [], `explanation` to [].\n\
          C) CHINESE section\n\
            - `translations`: 1-3 中文释义 (each <=20 Chinese chars).\n\
            - `usage_notes`: 1-2 句中文，描述这个词常用于什么情境、语体偏正式/口语、有何感情色彩。\n\
