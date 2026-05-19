@@ -211,18 +211,16 @@ pub fn write_preview(
         }
     }
 
-    {
-        let (text, link) = if let Some(w) = &extra.wikipedia {
-            (Some(w.extract.clone()), w.url.clone())
-        } else if let Some(y) = &extra.youdao {
-            (y.wiki.clone(), None)
-        } else {
-            (None, None)
-        };
-        if let Some(t) = text.filter(|t| !t.is_empty()) {
-            let _ = write!(body, "<section><h2>📖 维基百科</h2><p>{}</p>", esc(&t));
-            if let Some(u) = link {
-                let _ = write!(body, "<p><a href=\"{}\">{}</a></p>", esc(&u), esc(&u));
+    // Wikipedia: only the official REST API is shown. We deliberately do
+    // NOT fall back to Youdao's `wikipedia_digest` — it scrapes the same
+    // Wikipedia and ships disambiguation digests like
+    // "Splendid may refer to:" with no type field, which the official
+    // client correctly rejects (type=disambiguation -> None).
+    if let Some(w) = &extra.wikipedia {
+        if !w.extract.is_empty() {
+            let _ = write!(body, "<section><h2>📖 维基百科</h2><p>{}</p>", esc(&w.extract));
+            if let Some(u) = &w.url {
+                let _ = write!(body, "<p><a href=\"{}\">{}</a></p>", esc(u), esc(u));
             }
             let _ = write!(body, "</section>");
         }
@@ -361,6 +359,25 @@ mod tests {
         assert!(html.contains("feeling joy"), "xref stripped");
         assert!(html.contains("ha&lt;ppy"), "title escaped");
         assert!(html.contains("Happiness &lt;is&gt; good"), "wiki escaped");
+    }
+
+    #[test]
+    fn youdao_wiki_digest_is_never_used_as_fallback() {
+        // Regression: Youdao's `wikipedia_digest` ships disambiguation
+        // strings like "Splendid may refer to:" without a `type` field.
+        // We don't fall back to it — the official Wikipedia client
+        // already rejects type=disambiguation as None.
+        use crate::sources::youdao::YoudaoData;
+        let mut cs = CardSources::default();
+        cs.youdao = Some(YoudaoData {
+            wiki: Some("Splendid may refer to:".into()),
+            ec_zh: vec!["adj. 灿烂的".into()],
+            ..Default::default()
+        });
+        let p = write_preview(&dir(), "splendid", None, &[], &[], None, &cs).unwrap();
+        let html = std::fs::read_to_string(&p).unwrap();
+        assert!(!html.contains("维基百科"), "wiki block must be absent when only youdao digest exists");
+        assert!(!html.contains("Splendid may refer to:"), "disambiguation string must not leak in");
     }
 
     #[test]
