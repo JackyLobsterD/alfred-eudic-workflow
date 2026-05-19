@@ -360,49 +360,62 @@ pub fn write_preview(
             .map(|f| f.meanings.iter().flat_map(|m| m.examples.iter()).collect())
             .unwrap_or_default();
         if has_phr || has_sent || !fd_ex.is_empty() {
+            let word_enc = encode_path_segment(spell.trim());
+            let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", word_enc);
             let _ = write!(body, "<section><h2>🧩 Phrases / Examples</h2>");
             if let Some(y) = y {
-                if !y.phrs.is_empty() {
-                    let _ = write!(body, "<ul>");
-                    for p in &y.phrs {
-                        let _ = write!(body, "<li>{}</li>", esc(p));
+                if has_phr || has_sent {
+                    let _ = write!(body, "<h3>🌐 <a href=\"{}\">Youdao →</a></h3>", esc(&yd_url));
+                    if !y.phrs.is_empty() {
+                        let _ = write!(body, "<ul>");
+                        for p in &y.phrs {
+                            let _ = write!(body, "<li>{}</li>", esc(p));
+                        }
+                        let _ = write!(body, "</ul>");
                     }
-                    let _ = write!(body, "</ul>");
-                }
-                for (en, zh) in &y.sents {
-                    let _ = write!(body, "<p>{}<span class=\"meta\">{}</span></p>", esc(en), esc(zh));
+                    for (en, zh) in &y.sents {
+                        let _ = write!(body, "<p>{}<span class=\"meta\">{}</span></p>", esc(en), esc(zh));
+                    }
                 }
             }
-            for ex in fd_ex {
-                let _ = write!(body, "<p><em>e.g.</em> {}</p>", esc(ex));
+            if !fd_ex.is_empty() {
+                let _ = write!(body, "<h3>📓 FreeDict</h3>");
+                for ex in fd_ex {
+                    let _ = write!(body, "<p><em>e.g.</em> {}</p>", esc(ex));
+                }
             }
             let _ = write!(body, "</section>");
         }
     }
 
+    // Chinese: ECDICT (local) + Youdao (ec_zh translations + web_trans).
     {
-        let mut zh: Vec<String> = Vec::new();
-        if let Some(e) = ecdict {
-            if let Some(t) = e.translation.as_ref().or(e.definition.as_ref()) {
-                zh.push(t.replace('\\', "/").replace('\n', "; "));
-            }
-        }
-        if let Some(y) = &extra.youdao {
-            zh.extend(y.ec_zh.iter().cloned());
-        }
-        let web: Vec<String> = extra
-            .youdao
-            .as_ref()
-            .map(|y| y.web_trans.clone())
-            .unwrap_or_default();
-        dedup(&mut zh);
-        if !zh.is_empty() || !web.is_empty() {
+        let ec_zh: Option<String> = ecdict
+            .and_then(|e| e.translation.as_ref().or(e.definition.as_ref()))
+            .map(|t| t.replace('\\', "/").replace('\n', "; "));
+        let yd_ec: Vec<String> = extra.youdao.as_ref().map(|y| y.ec_zh.clone()).unwrap_or_default();
+        let yd_web: Vec<String> = extra.youdao.as_ref().map(|y| y.web_trans.clone()).unwrap_or_default();
+        let has_ecdict = ec_zh.as_deref().map(|s| !s.is_empty()).unwrap_or(false);
+        let has_yd = !yd_ec.is_empty() || !yd_web.is_empty();
+        if has_ecdict || has_yd {
+            let word_enc = encode_path_segment(spell.trim());
+            let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", word_enc);
             let _ = write!(body, "<section><h2>📕 Chinese</h2>");
-            for line in &zh {
-                let _ = write!(body, "<p>{}</p>", esc(line));
+            if let Some(line) = ec_zh.filter(|s| !s.is_empty()) {
+                let _ = write!(body, "<h3>📕 ECDICT</h3><p>{}</p>", esc(&line));
             }
-            if !web.is_empty() {
-                let _ = write!(body, "<p><span class=\"src\">Web:</span> {}</p>", esc(&web.join("; ")));
+            if has_yd {
+                let _ = write!(body, "<h3>🌐 <a href=\"{}\">Youdao →</a></h3>", esc(&yd_url));
+                for line in &yd_ec {
+                    let _ = write!(body, "<p>{}</p>", esc(line));
+                }
+                if !yd_web.is_empty() {
+                    let _ = write!(
+                        body,
+                        "<p><span class=\"src\">Web:</span> {}</p>",
+                        esc(&yd_web.join("; "))
+                    );
+                }
             }
             let _ = write!(body, "</section>");
         }
@@ -414,6 +427,7 @@ pub fn write_preview(
         let collins = e.collins.filter(|c| *c > 0).map(|c| "⭐️".repeat(c.min(5) as usize));
         if infl.is_some() || tags.is_some() || collins.is_some() {
             let _ = write!(body, "<section><h2>🔀 Inflections / Tags</h2>");
+            let _ = write!(body, "<h3>📕 ECDICT</h3>");
             if let Some(i) = infl {
                 let _ = write!(body, "<p>{}</p>", esc(&i));
             }
@@ -446,41 +460,62 @@ pub fn write_preview(
         }
     }
 
+    // Etymology: Youdao etym + FreeDict origin (each rendered under its
+    // own source sub-heading).
     {
-        let mut et: Vec<String> = Vec::new();
-        if let Some(y) = &extra.youdao {
-            if let Some(e) = &y.etym {
-                et.push(e.clone());
-            }
-        }
-        if let Some(f) = &extra.freedict {
-            if let Some(o) = &f.origin {
-                et.push(o.clone());
-            }
-        }
-        dedup(&mut et);
-        if !et.is_empty() {
+        let yd_etym = extra.youdao.as_ref().and_then(|y| y.etym.as_deref()).filter(|s| !s.is_empty());
+        let fd_origin = extra.freedict.as_ref().and_then(|f| f.origin.as_deref()).filter(|s| !s.is_empty());
+        if yd_etym.is_some() || fd_origin.is_some() {
+            let word_enc = encode_path_segment(spell.trim());
+            let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", word_enc);
             let _ = write!(body, "<section><h2>🌱 Etymology</h2>");
-            for e in et {
-                let _ = write!(body, "<p>{}</p>", esc(&e));
+            if let Some(e) = yd_etym {
+                let _ = write!(
+                    body,
+                    "<h3>🌐 <a href=\"{}\">Youdao →</a></h3><p>{}</p>",
+                    esc(&yd_url), esc(e),
+                );
+            }
+            if let Some(o) = fd_origin {
+                let _ = write!(body, "<h3>📓 FreeDict</h3><p>{}</p>", esc(o));
             }
             let _ = write!(body, "</section>");
         }
     }
 
+    // Pronunciation: each source contributes its own phonetic and/or
+    // audio link. Sub-sectioned so the reader sees who said what.
     {
-        let audio = extra
-            .mw_learners
-            .as_ref()
-            .and_then(|m| m.audio_url.clone())
-            .or_else(|| extra.freedict.as_ref().and_then(|f| f.audio.clone()));
-        if phonetic.is_some() || audio.is_some() {
+        let ec_ph = ecdict.and_then(|e| e.phonetic.clone()).filter(|s| !s.is_empty());
+        let fd_ph = extra.freedict.as_ref().and_then(|f| f.phonetic.clone()).filter(|s| !s.is_empty());
+        let fd_audio = extra.freedict.as_ref().and_then(|f| f.audio.clone()).filter(|s| !s.is_empty());
+        let ml_ph = extra.mw_learners.as_ref().and_then(|m| m.phonetic.clone()).filter(|s| !s.is_empty());
+        let ml_audio = extra.mw_learners.as_ref().and_then(|m| m.audio_url.clone()).filter(|s| !s.is_empty());
+        let any = ec_ph.is_some() || fd_ph.is_some() || fd_audio.is_some() || ml_ph.is_some() || ml_audio.is_some();
+        if any {
             let _ = write!(body, "<section><h2>🔊 Pronunciation</h2>");
-            if let Some(p) = &phonetic {
-                let _ = write!(body, "<p>/{}/</p>", esc(p));
+            if let Some(p) = &ec_ph {
+                let _ = write!(body, "<h3>📕 ECDICT</h3><p>/{}/</p>", esc(p));
             }
-            if let Some(a) = &audio {
-                let _ = write!(body, "<p><a href=\"{}\">▶ play audio</a></p>", esc(a));
+            if fd_ph.is_some() || fd_audio.is_some() {
+                let _ = write!(body, "<h3>📓 FreeDict</h3>");
+                if let Some(p) = &fd_ph {
+                    let _ = write!(body, "<p>/{}/</p>", esc(p));
+                }
+                if let Some(a) = &fd_audio {
+                    let _ = write!(body, "<p><a href=\"{}\">▶ play audio</a></p>", esc(a));
+                }
+            }
+            if ml_ph.is_some() || ml_audio.is_some() {
+                let word_enc = encode_path_segment(spell.trim());
+                let ml_url = format!("https://learnersdictionary.com/definition/{}", word_enc);
+                let _ = write!(body, "<h3>📗 <a href=\"{}\">M-W Learner's →</a></h3>", esc(&ml_url));
+                if let Some(p) = &ml_ph {
+                    let _ = write!(body, "<p>/{}/</p>", esc(p));
+                }
+                if let Some(a) = &ml_audio {
+                    let _ = write!(body, "<p><a href=\"{}\">▶ play audio</a></p>", esc(a));
+                }
             }
             let _ = write!(body, "</section>");
         }
