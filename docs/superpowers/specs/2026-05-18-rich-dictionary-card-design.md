@@ -47,7 +47,7 @@ degraded:
 | Datamuse `api.datamuse.com` | — | Synonyms/antonyms/related/triggers (`rel_syn`, `rel_ant`, `rel_trg`, `ml`). |
 | Wiktionary REST | — | Official `https://en.wiktionary.org/api/rest_v1/page/definition/<word>`. |
 | Free Dictionary API | — | `https://api.dictionaryapi.dev/api/v2/entries/en/<word>` — definitions, pos, examples, synonyms/antonyms, phonetics/audio, origin. |
-| Merriam-Webster Collegiate Dictionary | optional `MW_COLLEGIATE_API_KEY` | Authoritative EE + etymology + date + inflections + audio. Free non-commercial key (1000/day). Skipped if unset. |
+| Merriam-Webster Learner's Dictionary with Audio | optional `MW_LEARNERS_API_KEY` | Learner-friendly EE + abundant examples + inflections + audio. No etymology. Free non-commercial key (1000/day). Skipped if unset. |
 | Merriam-Webster Collegiate Thesaurus | optional `MW_THESAURUS_API_KEY` | Synonyms/antonyms/near-(ant)onyms. Skipped if unset. |
 
 ## Architecture & Data Flow
@@ -56,7 +56,7 @@ degraded:
 run_search:
   ECDICT (local, sync)
   parallel: Wordnik, Urban, Youdao, Wikipedia, Datamuse,
-            Wiktionary, FreeDict, MW-Collegiate, MW-Thesaurus
+            Wiktionary, FreeDict, MW-Learner's, MW-Thesaurus
   LLM (conditional, existing rules)
 
   → Alfred list: fallback / 📕ECDICT / 📘Wordnik / 🔥Urban / 🤖LLM
@@ -88,14 +88,14 @@ Title bar: word + phonetic.
 
 | # | Block | Data |
 |---|---|---|
-| 1 | 🔤 English-English | Wordnik + Youdao `ee`/`collins` + MW-Collegiate + Wiktionary + FreeDict (merged, deduped, source-labelled) |
+| 1 | 🔤 English-English | Wordnik + Youdao `ee`/`collins` + MW-Learner's + Wiktionary + FreeDict (merged, deduped, source-labelled) |
 | 2 | 🔄 Synonyms / Antonyms / Related | MW-Thesaurus (primary) + Datamuse + Youdao `syno`/`rel_word` + FreeDict |
 | 3 | 🧩 Phrases / Collocations + Examples | Youdao `phrs` + Youdao `blng_sents_part` + FreeDict examples |
 | 4 | 📕 Chinese + POS + Phonetic | ECDICT + Youdao `ec`/`web_trans` |
 | 5 | 🔀 Inflections + Exam Tags + Collins | ECDICT `exchange` + `tag` + `collins` stars (local) |
 | 6 | 📖 Wikipedia | Official Wikipedia REST (Youdao `wikipedia_digest` fallback) |
-| 7 | 🌱 Etymology | Youdao `etym` + FreeDict/Wiktionary origin + MW-Collegiate etymology |
-| 8 | 🔊 Pronunciation | MW-Collegiate / FreeDict audio link + phonetic text |
+| 7 | 🌱 Etymology | Youdao `etym` + FreeDict/Wiktionary origin (MW-Learner's has no etymology) |
+| 8 | 🔊 Pronunciation | MW-Learner's / FreeDict audio link + phonetic text |
 | 9 | 🔥 Urban Dictionary | Existing |
 | 10 | 🤖 Claude translation | Existing (only when triggered) |
 
@@ -105,7 +105,7 @@ Two new **optional** `userconfigurationconfig` textfields in `info.plist`
 (same mechanism as the existing Wordnik/Anthropic key fields), so they
 appear in Eudic's "Configure Workflow" panel:
 
-- `MW_COLLEGIATE_API_KEY` → label "Merriam-Webster Collegiate Key"
+- `MW_LEARNERS_API_KEY` → label "Merriam-Webster Learner's Key"
 - `MW_THESAURUS_API_KEY` → label "Merriam-Webster Thesaurus Key"
 
 Read via clap `env=` / `std::env` like the existing keys. Empty key →
