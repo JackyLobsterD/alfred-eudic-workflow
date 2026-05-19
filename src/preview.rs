@@ -16,6 +16,30 @@ fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
+/// Filename inside the cache dir for a word's preview card. Per-spell
+/// so concurrent queries (e.g. user typing "as" then "ass") cannot
+/// race on a single shared file. Non-alphanumeric characters become
+/// `_`; ASCII case is normalized; length capped to keep filesystem
+/// happy.
+pub fn preview_filename(spell: &str) -> String {
+    let mut name = String::with_capacity(spell.len() + 12);
+    name.push_str("preview-");
+    let mut empty = true;
+    for c in spell.trim().to_ascii_lowercase().chars().take(60) {
+        if c.is_ascii_alphanumeric() {
+            name.push(c);
+            empty = false;
+        } else {
+            name.push('_');
+        }
+    }
+    if empty {
+        name.push_str("blank");
+    }
+    name.push_str(".html");
+    name
+}
+
 /// External web pages for the word, always rendered as a quick-jump bar
 /// at the top of the card — even when a source returned no data, the
 /// user can click through and look it up directly on the site.
@@ -598,7 +622,11 @@ pub fn write_preview(
         refresh = refresh_meta,
         links = links_html,
     );
-    let path = cache_dir.join("preview.html");
+    // Per-spell filename so concurrent searches (typing "as" then
+    // "ass") don't race on a single shared preview.html — each query
+    // owns its own file and Quick Look reads the one the current
+    // dropdown is bound to.
+    let path = cache_dir.join(preview_filename(spell));
     std::fs::write(&path, html).ok()?;
     Some(path.to_string_lossy().into_owned())
 }
