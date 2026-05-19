@@ -190,6 +190,7 @@ mod tests {
         assert_eq!(mw_audio_url("test0001").unwrap(), "https://media.merriam-webster.com/audio/prons/en/us/mp3/t/test0001.mp3");
         assert_eq!(mw_audio_url("bixxx").unwrap(), "https://media.merriam-webster.com/audio/prons/en/us/mp3/bix/bixxx.mp3");
         assert_eq!(mw_audio_url("_3test").unwrap(), "https://media.merriam-webster.com/audio/prons/en/us/mp3/number/_3test.mp3");
+        assert_eq!(mw_audio_url("3d").unwrap(), "https://media.merriam-webster.com/audio/prons/en/us/mp3/number/3d.mp3");
         assert!(mw_audio_url("").is_none());
     }
 
@@ -221,6 +222,7 @@ mod tests {
     async fn learners_no_match_string_array_is_none() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
+            .and(path("/learners/tesst"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!(["tester", "tested"])))
             .mount(&server).await;
         let c = MwLearnersClient::with_base_url(dict_client(), "k".into(), format!("{}/learners", server.uri()));
