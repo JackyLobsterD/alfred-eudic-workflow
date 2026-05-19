@@ -130,6 +130,7 @@ where
             if let Ok(v) = serde_json::from_slice::<T>(&bytes) {
                 return Some(v);
             }
+            // corrupt or schema-changed cache value — fall through and refetch
         }
     }
     let value = fetch().await?;
@@ -212,5 +213,18 @@ mod tests {
         let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Datamuse, "x", false, mk).await;
         let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Datamuse, "x", false, mk).await;
         assert_eq!(calls.load(Ordering::SeqCst), 2, "None results are never cached");
+    }
+
+    #[tokio::test]
+    async fn json_cache_bypass_forces_refetch() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct D { v: u32 }
+        let cache: Arc<dyn Cache> = Arc::new(SqliteCache::in_memory().unwrap());
+        let calls = AtomicUsize::new(0);
+        let mk = || async { calls.fetch_add(1, Ordering::SeqCst); Some(D { v: 1 }) };
+        let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Wikipedia, "k", false, mk).await;
+        let _ = fetch_json_cached::<D, _, _>(cache.clone(), CacheKind::Wikipedia, "k", true, mk).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "bypass=true must skip cache and refetch");
     }
 }
