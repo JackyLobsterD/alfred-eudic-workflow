@@ -123,7 +123,7 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
         let llm_ref = llm_outcome.as_ref().and_then(|o| o.as_ref().ok());
         let dir = cache_dir();
         let _ = std::fs::create_dir_all(&dir);
-        preview::write_preview(
+        let path = preview::write_preview(
             &dir,
             &args.spell,
             ecdict_entries.first(),
@@ -132,7 +132,13 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
             llm_ref,
             &card_extra,
             llm_loading,
-        )
+        );
+        // Always write claude.html alongside — preview.html embeds it via
+        // an <iframe>. When loading, the file has the placeholder + its
+        // own meta-refresh; when we already have a cached LLM, the file
+        // contains the finished card with no refresh.
+        let _ = preview::write_claude_html(&dir, llm_ref, llm_loading);
+        path
     };
 
     // Build items so the multi-source lookup is visible at the top:

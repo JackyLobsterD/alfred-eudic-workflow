@@ -85,21 +85,12 @@ pub async fn run_card_update(args: SearchArgs) -> Result<(), Box<dyn std::error:
         None
     };
 
-    let wordnik_slice: &[crate::sources::DictEntry] =
-        wordnik_res.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
-    let urban_slice: &[crate::sources::DictEntry] =
-        urban_res.as_ref().map(|v| v.as_slice()).unwrap_or(&[]);
-
-    let _ = preview::write_preview(
-        &dir,
-        &spell,
-        ecdict_entries.first(),
-        wordnik_slice,
-        urban_slice,
-        llm_result.as_ref(),
-        &card_extra,
-        false, // not loading anymore
-    );
+    // The subprocess only needs to refresh the iframe target. The main
+    // process already wrote preview.html with the <iframe src="claude.html">;
+    // we overwrite that one file with the finished LLM card (no meta
+    // refresh, so the iframe stops polling after the next load).
+    let _ = (urban_res, wordnik_res, card_extra, ecdict_entries); // explicit no-op so cache fills are kept
+    let _ = preview::write_claude_html(&dir, llm_result.as_ref(), false);
 
     Ok(())
 }

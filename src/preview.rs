@@ -61,7 +61,9 @@ p{margin:6px 0;}\
 .wiki-link{display:inline-block;margin-top:10px;padding:6px 12px;\
 background:#2a3b4d;border-radius:4px;color:#9cf;text-decoration:none;\
 font-size:13px;}\
-.wiki-link:hover{background:#3a4b5d;color:#cdf;}";
+.wiki-link:hover{background:#3a4b5d;color:#cdf;}\
+.claude-frame{display:block;width:100%;border:0;background:transparent;\
+min-height:120px;}";
 
 /// Render the card to `<cache_dir>/preview.html`; return its path for use
 /// as an Alfred `quicklookurl`. `None` if there is nothing to show.
@@ -540,103 +542,21 @@ pub fn write_preview(
         let _ = write!(body, "</ol></section>");
     }
 
-    // Claude — three sub-sections rendered in the user-approved order:
-    // (1) English meaning + register examples, (2) Tech-domain analysis
-    // (skipped when not applicable), (3) Chinese translations + usage.
-    if llm_loading {
-        // Loading placeholder; the page auto-refreshes (meta tag in
-        // <head> below) until a background subprocess overwrites this
-        // file with the finished card.
+    // Claude — embedded as an <iframe> pointing at claude.html. The
+    // iframe is the ONLY thing that polls/reloads while the LLM is
+    // still running, so the rest of the card never flashes. We skip
+    // emitting the section entirely when there's nothing to show
+    // (no loading state and no usable LLM content).
+    let want_claude = llm_loading
+        || llm.map(|r| !render_claude_inner(r).is_empty()).unwrap_or(false);
+    if want_claude {
         let _ = write!(
             body,
             "<section><h2>🤖 Claude</h2>\
-             <p><span class=\"src\">⏳ Still thinking…</span> \
-             this section will appear automatically in ~15–25 seconds. \
-             You can keep scrolling the rest of the card.</p></section>"
+             <iframe class=\"claude-frame\" src=\"claude.html\" \
+             onload=\"try{{this.style.height=this.contentWindow.document.body.scrollHeight+'px'}}catch(e){{}}\"></iframe>\
+             </section>"
         );
-    } else if let Some(r) = llm {
-        let has_en = r.english.as_ref()
-            .map(|e| !e.definitions.is_empty() || e.examples.iter().any(|x| !x.sentence.is_empty()))
-            .unwrap_or(false);
-        let has_tech = r.tech.as_ref()
-            .map(|t| t.is_tech_term && (!t.domains.is_empty() || t.explanation.as_deref().map(|s| !s.is_empty()).unwrap_or(false)))
-            .unwrap_or(false);
-        let has_zh = r.chinese.as_ref()
-            .map(|c| !c.translations.is_empty() || c.usage_notes.as_deref().map(|s| !s.is_empty()).unwrap_or(false))
-            .unwrap_or(false);
-
-        if has_en || has_tech || has_zh {
-            let _ = write!(body, "<section><h2>🤖 Claude</h2>");
-
-            // (1) English
-            if let Some(en) = &r.english {
-                if has_en {
-                    let _ = write!(body, "<h3>📖 English meaning</h3>");
-                    if !en.definitions.is_empty() {
-                        let _ = write!(body, "<ol>");
-                        for d in &en.definitions {
-                            let _ = write!(body, "<li>{}</li>", esc(d));
-                        }
-                        let _ = write!(body, "</ol>");
-                    }
-                    let usable: Vec<&crate::llm::response::LlmExample> =
-                        en.examples.iter().filter(|e| !e.sentence.is_empty()).collect();
-                    if !usable.is_empty() {
-                        let _ = write!(body, "<p><span class=\"src\">Examples by register</span></p><ul>");
-                        for ex in usable {
-                            let label = match ex.scenario.as_str() {
-                                "internet" => "🌍 Internet",
-                                "software" => "💻 Software",
-                                "casual"   => "💬 Casual",
-                                "office"   => "🏢 Office",
-                                "email"    => "✉️ Email",
-                                "slack"    => "💬 Slack",
-                                other      => other,
-                            };
-                            let _ = write!(
-                                body,
-                                "<li><span class=\"src\">{}</span> {}</li>",
-                                esc(label),
-                                esc(&ex.sentence),
-                            );
-                        }
-                        let _ = write!(body, "</ul>");
-                    }
-                }
-            }
-
-            // (2) Tech-domain analysis
-            if let Some(t) = &r.tech {
-                if has_tech {
-                    let _ = write!(body, "<h3>💻 Tech use</h3>");
-                    if !t.domains.is_empty() {
-                        let _ = write!(
-                            body,
-                            "<p><span class=\"src\">Used in:</span> {}</p>",
-                            esc(&t.domains.join(" · ")),
-                        );
-                    }
-                    if let Some(expl) = t.explanation.as_deref().filter(|s| !s.is_empty()) {
-                        let _ = write!(body, "<p>{}</p>", esc(expl));
-                    }
-                }
-            }
-
-            // (3) Chinese
-            if let Some(zh) = &r.chinese {
-                if has_zh {
-                    let _ = write!(body, "<h3>🀄 Chinese</h3>");
-                    if !zh.translations.is_empty() {
-                        let _ = write!(body, "<p>{}</p>", esc(&zh.translations.join("; ")));
-                    }
-                    if let Some(u) = zh.usage_notes.as_deref().filter(|s| !s.is_empty()) {
-                        let _ = write!(body, "<p><span class=\"src\">用法:</span> {}</p>", esc(u));
-                    }
-                }
-            }
-
-            let _ = write!(body, "</section>");
-        }
     }
 
     if body.is_empty() {
@@ -656,24 +576,141 @@ pub fn write_preview(
     }
     links_html.push_str("</p>");
 
-    // Auto-reload every 2s while the LLM is still being fetched in a
-    // background subprocess. Removed once the subprocess overwrites
-    // this file with the finished card.
-    let refresh_meta = if llm_loading {
-        "<meta http-equiv=\"refresh\" content=\"2\">"
-    } else {
-        ""
-    };
+    // No page-level meta-refresh anymore — the Claude iframe handles
+    // its own refresh internally so the rest of the card never flashes.
+    let _ = llm_loading; // kept in the signature for API stability
     let html = format!(
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">{refresh}\
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
 <style>{STYLE}</style></head><body><h1>{}</h1>{ph}{links}{body}</body></html>",
         esc(spell),
-        refresh = refresh_meta,
         links = links_html,
     );
     let path = cache_dir.join("preview.html");
     std::fs::write(&path, html).ok()?;
     Some(path.to_string_lossy().into_owned())
+}
+
+/// Render the inner HTML of the Claude section (the three sub-sections),
+/// without the outer `<section>`/`<h2>` wrapper. Returns empty string
+/// when the LLM has nothing usable.
+fn render_claude_inner(r: &LlmResult) -> String {
+    let mut body = String::new();
+    let has_en = r.english.as_ref()
+        .map(|e| !e.definitions.is_empty() || e.examples.iter().any(|x| !x.sentence.is_empty()))
+        .unwrap_or(false);
+    let has_tech = r.tech.as_ref()
+        .map(|t| t.is_tech_term && (!t.domains.is_empty() || t.explanation.as_deref().map(|s| !s.is_empty()).unwrap_or(false)))
+        .unwrap_or(false);
+    let has_zh = r.chinese.as_ref()
+        .map(|c| !c.translations.is_empty() || c.usage_notes.as_deref().map(|s| !s.is_empty()).unwrap_or(false))
+        .unwrap_or(false);
+    if !has_en && !has_tech && !has_zh {
+        return body;
+    }
+    if let Some(en) = &r.english {
+        if has_en {
+            let _ = write!(body, "<h3>📖 English meaning</h3>");
+            if !en.definitions.is_empty() {
+                let _ = write!(body, "<ol>");
+                for d in &en.definitions {
+                    let _ = write!(body, "<li>{}</li>", esc(d));
+                }
+                let _ = write!(body, "</ol>");
+            }
+            let usable: Vec<&crate::llm::response::LlmExample> =
+                en.examples.iter().filter(|e| !e.sentence.is_empty()).collect();
+            if !usable.is_empty() {
+                let _ = write!(body, "<p><span class=\"src\">Examples by register</span></p><ul>");
+                for ex in usable {
+                    let label = match ex.scenario.as_str() {
+                        "internet" => "🌍 Internet",
+                        "software" => "💻 Software",
+                        "casual"   => "💬 Casual",
+                        "office"   => "🏢 Office",
+                        "email"    => "✉️ Email",
+                        "slack"    => "💬 Slack",
+                        other      => other,
+                    };
+                    let _ = write!(
+                        body,
+                        "<li><span class=\"src\">{}</span> {}</li>",
+                        esc(label),
+                        esc(&ex.sentence),
+                    );
+                }
+                let _ = write!(body, "</ul>");
+            }
+        }
+    }
+    if let Some(t) = &r.tech {
+        if has_tech {
+            let _ = write!(body, "<h3>💻 Tech use</h3>");
+            if !t.domains.is_empty() {
+                let _ = write!(
+                    body,
+                    "<p><span class=\"src\">Used in:</span> {}</p>",
+                    esc(&t.domains.join(" · ")),
+                );
+            }
+            if let Some(expl) = t.explanation.as_deref().filter(|s| !s.is_empty()) {
+                let _ = write!(body, "<p>{}</p>", esc(expl));
+            }
+        }
+    }
+    if let Some(zh) = &r.chinese {
+        if has_zh {
+            let _ = write!(body, "<h3>🀄 Chinese</h3>");
+            if !zh.translations.is_empty() {
+                let _ = write!(body, "<p>{}</p>", esc(&zh.translations.join("; ")));
+            }
+            if let Some(u) = zh.usage_notes.as_deref().filter(|s| !s.is_empty()) {
+                let _ = write!(body, "<p><span class=\"src\">用法:</span> {}</p>", esc(u));
+            }
+        }
+    }
+    body
+}
+
+/// Write `<cache_dir>/claude.html` — the iframe target embedded in the
+/// main card. When `loading` is true (the LLM has nothing in the cache
+/// yet), the body is a small "still thinking" placeholder and the head
+/// carries `<meta http-equiv="refresh" content="2">` so only this
+/// inner document reloads while we wait. When `loading` is false, the
+/// final LLM card is rendered without a meta-refresh — the iframe
+/// stops polling after one more load.
+pub fn write_claude_html(
+    cache_dir: &Path,
+    llm: Option<&LlmResult>,
+    loading: bool,
+) -> std::io::Result<()> {
+    let refresh = if loading {
+        "<meta http-equiv=\"refresh\" content=\"2\">"
+    } else {
+        ""
+    };
+    let body = if loading {
+        "<p><span class=\"src\">⏳ Still thinking…</span> \
+         this section will appear automatically in ~15–25 seconds. \
+         You can keep scrolling the rest of the card.</p>"
+            .to_string()
+    } else if let Some(r) = llm {
+        let inner = render_claude_inner(r);
+        if inner.is_empty() {
+            "<p class=\"src\">No LLM result for this word.</p>".to_string()
+        } else {
+            inner
+        }
+    } else {
+        "<p class=\"src\">No LLM result for this word.</p>".to_string()
+    };
+    // Embed the same dark theme + structural CSS so the iframe matches
+    // the surrounding card visually.
+    let html = format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">{refresh}\
+<style>html,body{{margin:0;padding:0;background:transparent;}}{STYLE}</style>\
+</head><body>{body}</body></html>",
+    );
+    std::fs::write(cache_dir.join("claude.html"), html)
 }
 
 fn dedup(v: &mut Vec<String>) {
