@@ -42,13 +42,14 @@ pub async fn gather_card_data(
     bypass: bool,
     keys: &CardKeys,
 ) -> CardSources {
-    let yd = YoudaoClient::new(dict_client());
-    let wp = WikipediaClient::new(dict_client());
-    let dm = DatamuseClient::new(dict_client());
-    let wk = WiktionaryClient::new(dict_client());
-    let fd = FreeDictClient::new(dict_client());
-    let ml = MwLearnersClient::new(dict_client(), keys.mw_learners.clone());
-    let mt = MwThesaurusClient::new(dict_client(), keys.mw_thesaurus.clone());
+    let http = dict_client();
+    let yd = YoudaoClient::new(http.clone());
+    let wp = WikipediaClient::new(http.clone());
+    let dm = DatamuseClient::new(http.clone());
+    let wk = WiktionaryClient::new(http.clone());
+    let fd = FreeDictClient::new(http.clone());
+    let ml = MwLearnersClient::new(http.clone(), keys.mw_learners.clone());
+    let mt = MwThesaurusClient::new(http.clone(), keys.mw_thesaurus.clone());
 
     let (youdao, wikipedia, datamuse, wiktionary, freedict, mw_learners, mw_thesaurus) = tokio::join!(
         fetch_json_cached(cache.clone(), CacheKind::Youdao, spell, bypass, || yd.fetch(spell)),
@@ -73,6 +74,6 @@ mod tests {
         let cache: Arc<dyn Cache> = Arc::new(SqliteCache::in_memory().unwrap());
         let keys = CardKeys { mw_learners: String::new(), mw_thesaurus: String::new() };
         let r = gather_card_data(cache, "zzzznotaword", false, &keys).await;
-        assert!(r.mw_learners.is_none() && r.mw_thesaurus.is_none());
+        assert_eq!(r, CardSources::default());
     }
 }
