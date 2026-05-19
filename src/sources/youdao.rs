@@ -35,6 +35,11 @@ fn s(v: &Value, p: &str) -> Option<String> {
     if t.is_empty() { None } else { Some(t.to_string()) }
 }
 
+fn ne(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() { None } else { Some(t.to_string()) }
+}
+
 impl YoudaoClient {
     pub fn new(http: Arc<Client>) -> Self {
         Self { http, base_url: BASE_URL.to_string() }
@@ -64,7 +69,7 @@ impl YoudaoClient {
         if let Some(trs) = v.pointer("/ec/word/0/trs").and_then(|x| x.as_array()) {
             for t in trs {
                 if let Some(line) = t.pointer("/tr/0/l/i/0").and_then(|x| x.as_str()) {
-                    d.ec_zh.push(line.trim().to_string());
+                    if let Some(x) = ne(line) { d.ec_zh.push(x); }
                 }
             }
         }
@@ -73,7 +78,7 @@ impl YoudaoClient {
                 let pos = t.pointer("/pos").and_then(|x| x.as_str()).unwrap_or("");
                 if let Some(tr) = t.pointer("/tr/0/l/i").and_then(|x| x.as_str()) {
                     let line = if pos.is_empty() { tr.to_string() } else { format!("{} {}", pos, tr) };
-                    d.ee.push(line.trim().to_string());
+                    if let Some(x) = ne(&line) { d.ee.push(x); }
                 }
             }
         }
@@ -86,7 +91,7 @@ impl YoudaoClient {
                     .map(|a| a.iter().filter_map(|w| w.pointer("/w").and_then(|x| x.as_str()).map(String::from)).collect())
                     .unwrap_or_default();
                 if !ws.is_empty() {
-                    d.syno.push(format!("{} {}", pos, ws.join(", ")).trim().to_string());
+                    if let Some(x) = ne(&format!("{} {}", pos, ws.join(", "))) { d.syno.push(x); }
                 }
             }
         }
@@ -99,7 +104,7 @@ impl YoudaoClient {
                     .map(|a| a.iter().filter_map(|w| w.pointer("/word").and_then(|x| x.as_str()).map(String::from)).collect())
                     .unwrap_or_default();
                 if !ws.is_empty() {
-                    d.rel_word.push(format!("{} {}", pos, ws.join(", ")).trim().to_string());
+                    if let Some(x) = ne(&format!("{} {}", pos, ws.join(", "))) { d.rel_word.push(x); }
                 }
             }
         }
@@ -107,8 +112,13 @@ impl YoudaoClient {
             for p in arr {
                 let head = p.pointer("/phr/headword/l/i").and_then(|x| x.as_str()).unwrap_or("");
                 let tr = p.pointer("/phr/trs/0/tr/l/i").and_then(|x| x.as_str()).unwrap_or("");
-                if !head.is_empty() {
-                    d.phrs.push(format!("{} — {}", head.trim(), tr.trim()).trim_end_matches(" — ").to_string());
+                if !head.trim().is_empty() {
+                    let line = if tr.trim().is_empty() {
+                        head.trim().to_string()
+                    } else {
+                        format!("{} — {}", head.trim(), tr.trim())
+                    };
+                    d.phrs.push(line);
                 }
             }
         }
@@ -116,15 +126,15 @@ impl YoudaoClient {
             for sp in arr {
                 let en = sp.pointer("/sentence").and_then(|x| x.as_str()).unwrap_or("");
                 let zh = sp.pointer("/sentence-translation").and_then(|x| x.as_str()).unwrap_or("");
-                if !en.is_empty() {
-                    d.sents.push((en.trim().to_string(), zh.trim().to_string()));
+                if let Some(en2) = ne(en) {
+                    d.sents.push((en2, zh.trim().to_string()));
                 }
             }
         }
         if let Some(arr) = v.pointer("/web_trans/web-translation").and_then(|x| x.as_array()) {
             for w in arr {
                 if let Some(val) = w.pointer("/trans/0/value").and_then(|x| x.as_str()) {
-                    d.web_trans.push(val.trim().to_string());
+                    if let Some(x) = ne(val) { d.web_trans.push(x); }
                 }
             }
         }
@@ -190,5 +200,34 @@ mod tests {
         Mock::given(method("GET")).respond_with(ResponseTemplate::new(500)).mount(&server).await;
         let c = YoudaoClient::with_base_url(dict_client(), server.uri());
         assert!(c.fetch("x").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn whitespace_only_values_are_dropped() {
+        let body = serde_json::json!({
+            "ec": {"word": [{"trs": [{"tr": [{"l": {"i": ["   "]}}]}]}]},
+            "web_trans": {"web-translation": [{"trans": [{"value": "  "}]}]}
+        });
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server).await;
+        let c = YoudaoClient::with_base_url(dict_client(), server.uri());
+        // ec_zh and web_trans would be whitespace-only -> dropped -> all empty -> None
+        assert!(c.fetch("x").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn phrase_without_translation_is_headword_only() {
+        let body = serde_json::json!({
+            "phrs": {"phrs": [{"phr": {"headword": {"l": {"i": "acid test"}}, "trs": []}}]}
+        });
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server).await;
+        let c = YoudaoClient::with_base_url(dict_client(), server.uri());
+        let d = c.fetch("x").await.unwrap();
+        assert_eq!(d.phrs, vec!["acid test"]);
     }
 }
