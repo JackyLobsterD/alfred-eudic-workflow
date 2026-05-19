@@ -8,6 +8,7 @@ use alfred::script_filter::{Item, ScriptFilter, Variable};
 use alfred::updater::{Updater, version_compare};
 
 use crate::cache::{Cache, sqlite::SqliteCache};
+use crate::card::{gather_card_data, CardKeys};
 use crate::dictionary::{DictionaryConfig, DictionaryManager};
 use crate::http::{dict_client, llm_client};
 use crate::llm::{LlmClient, LlmError, fetch_with_cache_llm};
@@ -42,6 +43,8 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
     let bypass_cache = env::var("BYPASS_CACHE").ok().as_deref() == Some("1");
     let wordnik_key = env::var("WORDNIK_API_KEY").unwrap_or_default();
     let anthropic_key = env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+    let mw_learners_key = env::var("MW_LEARNERS_API_KEY").unwrap_or_default();
+    let mw_thesaurus_key = env::var("MW_THESAURUS_API_KEY").unwrap_or_default();
 
     // Open cache (degrade gracefully).
     let cache: Arc<dyn Cache> = match open_cache() {
@@ -75,6 +78,17 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
         fetch_with_cache(&urban as &dyn DictionarySource, cache.clone(), &spell_for_remote, bypass_cache),
         fetch_with_cache(&wordnik as &dyn DictionarySource, cache.clone(), &spell_for_remote, bypass_cache),
     );
+
+    let card_extra = gather_card_data(
+        cache.clone(),
+        &spell_for_remote,
+        bypass_cache,
+        &CardKeys {
+            mw_learners: mw_learners_key,
+            mw_thesaurus: mw_thesaurus_key,
+        },
+    )
+    .await;
 
     // Decide whether to invoke LLM.
     let llm_should_run = (force_llm
@@ -113,6 +127,7 @@ pub async fn run_search(mut args: SearchArgs) -> Result<(), Box<dyn std::error::
             wordnik_slice,
             urban_slice,
             llm_ref,
+            &card_extra,
         )
     };
 
