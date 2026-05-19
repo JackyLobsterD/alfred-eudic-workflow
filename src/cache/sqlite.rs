@@ -31,7 +31,7 @@ impl SqliteCache {
     }
 
     fn migrate(conn: &Connection) -> rusqlite::Result<()> {
-        for kind in [CacheKind::Urban, CacheKind::Wordnik, CacheKind::Llm] {
+        for kind in CacheKind::all() {
             let sql = format!(
                 "CREATE TABLE IF NOT EXISTS {} (\
                     key TEXT PRIMARY KEY, \
