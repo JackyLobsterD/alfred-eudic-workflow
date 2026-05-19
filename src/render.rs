@@ -89,14 +89,14 @@ pub fn render_ecdict(entries: &[StardictEntry]) -> Vec<Item> {
 }
 
 pub fn render_no_api_key(source_name: &str) -> Item {
-    Item::new(format!("⚙️ {} 未配置 API key", source_name))
-        .subtitle("回车查看配置说明")
+    Item::new(format!("⚙️ {} API key not configured", source_name))
+        .subtitle("Press Enter for setup instructions")
         .arg(README_CONFIG_URL)
 }
 
 pub fn render_error(source_name: &str, err_msg: &str, spell: &str) -> Item {
     Item::new(format!("⚠️ {}: {}", source_name, err_msg))
-        .subtitle("回车重试（绕过缓存）")
+        .subtitle("Press Enter to retry (bypass cache)")
         .arg(spell)
         .variable(Variable::new(Some("BYPASS_CACHE".into()), Some("1".into())))
 }

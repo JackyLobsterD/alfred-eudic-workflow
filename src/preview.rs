@@ -29,28 +29,8 @@ fn external_links(word: &str) -> Vec<(&'static str, String)> {
         ("M-W Thesaurus", format!("https://www.merriam-webster.com/thesaurus/{}", w)),
         ("Cambridge", format!("https://dictionary.cambridge.org/dictionary/english/{}", w)),
         ("Etymonline", format!("https://www.etymonline.com/word/{}", w)),
-        ("有道", format!("https://www.youdao.com/result?word={}&lang=en", w)),
+        ("Youdao", format!("https://www.youdao.com/result?word={}&lang=en", w)),
     ]
-}
-
-/// Maps an English-English source attribution ("ahd-5", "wiktionary",
-/// "wordnet", "M-W Learner's", "Wiktionary", "FreeDict", "有道") to an
-/// external page URL for the given word, when one exists.
-fn ee_source_url(label: &str, word: &str) -> Option<String> {
-    let w = encode_path_segment(word.trim());
-    if label.starts_with("Wordnik") {
-        Some(format!("https://www.wordnik.com/words/{}", w))
-    } else if label.starts_with("Wiktionary") {
-        Some(format!("https://en.wiktionary.org/wiki/{}", w))
-    } else if label.starts_with("M-W Learner") {
-        Some(format!("https://learnersdictionary.com/definition/{}", w))
-    } else if label.starts_with("有道") {
-        Some(format!("https://www.youdao.com/result?word={}&lang=en", w))
-    } else if label.starts_with("FreeDict") {
-        None // dictionaryapi.dev has no per-word page
-    } else {
-        None
-    }
 }
 
 const STYLE: &str = "\
@@ -103,56 +83,96 @@ pub fn write_preview(
         .or_else(|| extra.freedict.as_ref().and_then(|f| f.phonetic.clone()))
         .or_else(|| extra.mw_learners.as_ref().and_then(|m| m.phonetic.clone()));
 
+    // Block 1: English-English — each source gets its own labelled
+    // sub-section so the reader can scan by provenance.
     {
-        let mut lines: Vec<(String, String)> = Vec::new();
-        for w in wordnik {
-            lines.push((strip_tags(&w.definition), format!("Wordnik {}", w.extra.clone().unwrap_or_default())));
-        }
-        if let Some(m) = &extra.mw_learners {
-            let pos = m.pos.clone().unwrap_or_default();
-            for d in &m.short_defs {
-                lines.push((d.clone(), format!("M-W Learner's {}", pos).trim().to_string()));
+        let word_enc = encode_path_segment(spell.trim());
+        let wn_url = format!("https://www.wordnik.com/words/{}", word_enc);
+        let ml_url = format!("https://learnersdictionary.com/definition/{}", word_enc);
+        let wt_url = format!("https://en.wiktionary.org/wiki/{}", word_enc);
+        let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", word_enc);
+
+        let has_wn = !wordnik.is_empty();
+        let has_ml = extra.mw_learners.as_ref().map(|m| !m.short_defs.is_empty()).unwrap_or(false);
+        let has_wk = extra.wiktionary.as_ref().map(|w| !w.senses.is_empty()).unwrap_or(false);
+        let has_fd = extra.freedict.as_ref()
+            .map(|f| f.meanings.iter().any(|m| !m.definitions.is_empty()))
+            .unwrap_or(false);
+        let has_yd = extra.youdao.as_ref().map(|y| !y.ee.is_empty()).unwrap_or(false);
+
+        if has_wn || has_ml || has_wk || has_fd || has_yd {
+            let _ = write!(body, "<section><h2>🔤 English-English</h2>");
+
+            if has_wn {
+                let _ = write!(body, "<h3>📘 <a href=\"{}\">Wordnik →</a></h3><ol>", esc(&wn_url));
+                for w in wordnik {
+                    let _ = write!(body, "<li>{}", esc(&strip_tags(&w.definition)));
+                    if let Some(meta) = w.extra.as_deref().filter(|x| !x.is_empty()) {
+                        let _ = write!(body, "<span class=\"meta\">{}</span>", esc(meta));
+                    }
+                    let _ = write!(body, "</li>");
+                }
+                let _ = write!(body, "</ol>");
             }
-        }
-        if let Some(y) = &extra.youdao {
-            for l in &y.ee {
-                lines.push((l.clone(), "有道".to_string()));
-            }
-        }
-        if let Some(w) = &extra.wiktionary {
-            for s in &w.senses {
-                for d in &s.definitions {
-                    lines.push((d.clone(), format!("Wiktionary {}", s.pos)));
+
+            if let Some(m) = &extra.mw_learners {
+                if !m.short_defs.is_empty() {
+                    let _ = write!(body, "<h3>📗 <a href=\"{}\">M-W Learner's →</a></h3><ol>", esc(&ml_url));
+                    let pos = m.pos.clone().unwrap_or_default();
+                    for d in &m.short_defs {
+                        let _ = write!(body, "<li>{}", esc(d));
+                        if !pos.is_empty() {
+                            let _ = write!(body, "<span class=\"meta\">{}</span>", esc(&pos));
+                        }
+                        let _ = write!(body, "</li>");
+                    }
+                    let _ = write!(body, "</ol>");
                 }
             }
-        }
-        if let Some(f) = &extra.freedict {
-            for m in &f.meanings {
-                for d in &m.definitions {
-                    lines.push((d.clone(), format!("FreeDict {}", m.pos)));
+
+            if let Some(w) = &extra.wiktionary {
+                if !w.senses.is_empty() {
+                    let _ = write!(body, "<h3>📕 <a href=\"{}\">Wiktionary →</a></h3><ol>", esc(&wt_url));
+                    for s in &w.senses {
+                        for d in &s.definitions {
+                            let _ = write!(body, "<li>{}", esc(d));
+                            if !s.pos.is_empty() {
+                                let _ = write!(body, "<span class=\"meta\">{}</span>", esc(&s.pos));
+                            }
+                            let _ = write!(body, "</li>");
+                        }
+                    }
+                    let _ = write!(body, "</ol>");
                 }
             }
-        }
-        if !lines.is_empty() {
-            let _ = write!(body, "<section><h2>🔤 英英释义 English-English</h2><ol>");
-            for (t, src) in lines {
-                let src_t = src.trim();
-                let labeled = match ee_source_url(src_t, spell) {
-                    Some(u) => format!(
-                        "<a href=\"{}\">{}</a>",
-                        esc(&u),
-                        esc(src_t),
-                    ),
-                    None => esc(src_t),
-                };
-                let _ = write!(
-                    body,
-                    "<li>{}<span class=\"meta\">{}</span></li>",
-                    esc(&t),
-                    labeled,
-                );
+
+            if let Some(f) = &extra.freedict {
+                if has_fd {
+                    let _ = write!(body, "<h3>📓 FreeDict</h3><ol>");
+                    for m in &f.meanings {
+                        for d in &m.definitions {
+                            let _ = write!(body, "<li>{}", esc(d));
+                            if !m.pos.is_empty() {
+                                let _ = write!(body, "<span class=\"meta\">{}</span>", esc(&m.pos));
+                            }
+                            let _ = write!(body, "</li>");
+                        }
+                    }
+                    let _ = write!(body, "</ol>");
+                }
             }
-            let _ = write!(body, "</ol></section>");
+
+            if let Some(y) = &extra.youdao {
+                if !y.ee.is_empty() {
+                    let _ = write!(body, "<h3>🌐 <a href=\"{}\">Youdao →</a></h3><ol>", esc(&yd_url));
+                    for line in &y.ee {
+                        let _ = write!(body, "<li>{}</li>", esc(line));
+                    }
+                    let _ = write!(body, "</ol>");
+                }
+            }
+
+            let _ = write!(body, "</section>");
         }
     }
 
@@ -196,11 +216,11 @@ pub fn write_preview(
         let yd_url = format!("https://www.youdao.com/result?word={}&lang=en", w);
 
         if any {
-            let _ = write!(body, "<section><h2>🔄 同义 / 反义 / 联想</h2>");
+            let _ = write!(body, "<section><h2>🔄 Synonyms / Antonyms / Related</h2>");
 
             // ---- Synonyms (all sources, source-grouped) ----
             if has_mw_syn || has_dm_syn || has_fd_syn || has_yd_syn {
-                let _ = write!(body, "<h3>同义</h3>");
+                let _ = write!(body, "<h3>Synonyms</h3>");
                 if let Some(t) = mw {
                     if !t.synonym_groups.is_empty() {
                         let _ = write!(
@@ -211,7 +231,7 @@ pub fn write_preview(
                         for (i, g) in t.synonym_groups.iter().enumerate() {
                             if g.is_empty() { continue; }
                             let label = if t.synonym_groups.len() > 1 {
-                                format!("义项 {} ({})", i + 1, g.len())
+                                format!("sense {} ({})", i + 1, g.len())
                             } else {
                                 format!("({})", g.len())
                             };
@@ -245,7 +265,7 @@ pub fn write_preview(
                     if !y.syno.is_empty() {
                         let _ = write!(
                             body,
-                            "<h4>🌐 <a href=\"{}\">有道 →</a></h4>",
+                            "<h4>🌐 <a href=\"{}\">Youdao →</a></h4>",
                             esc(&yd_url),
                         );
                         for line in &y.syno {
@@ -257,7 +277,7 @@ pub fn write_preview(
 
             // ---- Antonyms (all sources, source-grouped) ----
             if has_mw_ant || has_dm_ant || has_fd_ant {
-                let _ = write!(body, "<h3>反义</h3>");
+                let _ = write!(body, "<h3>Antonyms</h3>");
                 if let Some(t) = mw {
                     if !t.antonym_groups.is_empty() {
                         let _ = write!(
@@ -268,7 +288,7 @@ pub fn write_preview(
                         for (i, g) in t.antonym_groups.iter().enumerate() {
                             if g.is_empty() { continue; }
                             let label = if t.antonym_groups.len() > 1 {
-                                format!("义项 {} ({})", i + 1, g.len())
+                                format!("sense {} ({})", i + 1, g.len())
                             } else {
                                 format!("({})", g.len())
                             };
@@ -300,9 +320,9 @@ pub fn write_preview(
                 }
             }
 
-            // ---- Related / 派生 / 联想 ----
+            // ---- Related / derived ----
             if has_dm_rel || has_yd_rel {
-                let _ = write!(body, "<h3>联想 / 派生</h3>");
+                let _ = write!(body, "<h3>Related</h3>");
                 if let Some(d) = dm {
                     if !d.related.is_empty() {
                         let _ = write!(body, "<h4>🎯 Datamuse</h4>");
@@ -317,7 +337,7 @@ pub fn write_preview(
                     if !y.rel_word.is_empty() {
                         let _ = write!(
                             body,
-                            "<h4>🌐 <a href=\"{}\">有道 →</a></h4>",
+                            "<h4>🌐 <a href=\"{}\">Youdao →</a></h4>",
                             esc(&yd_url),
                         );
                         for line in &y.rel_word {
@@ -340,7 +360,7 @@ pub fn write_preview(
             .map(|f| f.meanings.iter().flat_map(|m| m.examples.iter()).collect())
             .unwrap_or_default();
         if has_phr || has_sent || !fd_ex.is_empty() {
-            let _ = write!(body, "<section><h2>🧩 词组短语 / 例句</h2>");
+            let _ = write!(body, "<section><h2>🧩 Phrases / Examples</h2>");
             if let Some(y) = y {
                 if !y.phrs.is_empty() {
                     let _ = write!(body, "<ul>");
@@ -377,12 +397,12 @@ pub fn write_preview(
             .unwrap_or_default();
         dedup(&mut zh);
         if !zh.is_empty() || !web.is_empty() {
-            let _ = write!(body, "<section><h2>📕 中文释义</h2>");
+            let _ = write!(body, "<section><h2>📕 Chinese</h2>");
             for line in &zh {
                 let _ = write!(body, "<p>{}</p>", esc(line));
             }
             if !web.is_empty() {
-                let _ = write!(body, "<p class=\"src\">网络释义: {}</p>", esc(&web.join("; ")));
+                let _ = write!(body, "<p><span class=\"src\">Web:</span> {}</p>", esc(&web.join("; ")));
             }
             let _ = write!(body, "</section>");
         }
@@ -393,12 +413,12 @@ pub fn write_preview(
         let tags = e.tag_info();
         let collins = e.collins.filter(|c| *c > 0).map(|c| "⭐️".repeat(c.min(5) as usize));
         if infl.is_some() || tags.is_some() || collins.is_some() {
-            let _ = write!(body, "<section><h2>🔀 词形变化 / 标签</h2>");
+            let _ = write!(body, "<section><h2>🔀 Inflections / Tags</h2>");
             if let Some(i) = infl {
                 let _ = write!(body, "<p>{}</p>", esc(&i));
             }
             if let Some(t) = tags {
-                let _ = write!(body, "<p class=\"tags\">考试: {}</p>", esc(&t));
+                let _ = write!(body, "<p class=\"tags\">Exam: {}</p>", esc(&t));
             }
             if let Some(c) = collins {
                 let _ = write!(body, "<p>Collins {}</p>", c);
@@ -414,11 +434,11 @@ pub fn write_preview(
     // client correctly rejects (type=disambiguation -> None).
     if let Some(w) = &extra.wikipedia {
         if !w.extract.is_empty() {
-            let _ = write!(body, "<section><h2>📖 维基百科</h2><p>{}</p>", esc(&w.extract));
+            let _ = write!(body, "<section><h2>📖 Wikipedia</h2><p>{}</p>", esc(&w.extract));
             if let Some(u) = &w.url {
                 let _ = write!(
                     body,
-                    "<a class=\"wiki-link\" href=\"{}\">📖 在 Wikipedia 阅读全文 →</a>",
+                    "<a class=\"wiki-link\" href=\"{}\">📖 Read on Wikipedia →</a>",
                     esc(u),
                 );
             }
@@ -440,7 +460,7 @@ pub fn write_preview(
         }
         dedup(&mut et);
         if !et.is_empty() {
-            let _ = write!(body, "<section><h2>🌱 词源</h2>");
+            let _ = write!(body, "<section><h2>🌱 Etymology</h2>");
             for e in et {
                 let _ = write!(body, "<p>{}</p>", esc(&e));
             }
@@ -455,7 +475,7 @@ pub fn write_preview(
             .and_then(|m| m.audio_url.clone())
             .or_else(|| extra.freedict.as_ref().and_then(|f| f.audio.clone()));
         if phonetic.is_some() || audio.is_some() {
-            let _ = write!(body, "<section><h2>🔊 发音</h2>");
+            let _ = write!(body, "<section><h2>🔊 Pronunciation</h2>");
             if let Some(p) = &phonetic {
                 let _ = write!(body, "<p>/{}/</p>", esc(p));
             }
@@ -481,7 +501,7 @@ pub fn write_preview(
 
     if let Some(r) = llm {
         if !r.translations.is_empty() {
-            let _ = write!(body, "<section><h2>🤖 Claude 翻译</h2><p>{}</p>", esc(&r.translations.join("；")));
+            let _ = write!(body, "<section><h2>🤖 Claude translation</h2><p>{}</p>", esc(&r.translations.join("; ")));
             if let Some(ex) = r.example.as_deref().filter(|e| !e.is_empty()) {
                 let _ = write!(body, "<p><em>e.g.</em> {}</p>", esc(ex));
             }
@@ -500,7 +520,7 @@ pub fn write_preview(
     // Always-on external links bar — even when our card has no data
     // from a given source (rare/misspelled words), the user can click
     // through and look the word up directly on the source's website.
-    let mut links_html = String::from("<p class=\"links\">📚 外部查看 ");
+    let mut links_html = String::from("<p class=\"links\">📚 More on ");
     for (name, url) in external_links(spell) {
         let _ = write!(links_html, "· <a href=\"{}\">{}</a> ", esc(&url), esc(name));
     }
@@ -563,9 +583,12 @@ mod tests {
         }];
         let p = write_preview(&dir(), "ha<ppy", None, &wordnik, &[], None, &cs).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
-        let i_ee = html.find("英英释义").unwrap();
-        let i_syn = html.find("同义").unwrap();
-        let i_wiki = html.find("维基百科").unwrap();
+        // Look for unique section-header markers (with emoji) so we don't
+        // collide with the always-on top "More on …" links bar which also
+        // contains plain "Wikipedia"/"Wiktionary" link texts.
+        let i_ee = html.find("🔤 English-English").unwrap();
+        let i_syn = html.find("🔄 Synonyms").unwrap();
+        let i_wiki = html.find("📖 Wikipedia").unwrap();
         assert!(i_ee < i_syn && i_syn < i_wiki, "block order must follow priority");
         assert!(html.contains("feeling joy"), "xref stripped");
         assert!(html.contains("ha&lt;ppy"), "title escaped");
@@ -587,7 +610,7 @@ mod tests {
         });
         let p = write_preview(&dir(), "splendid", None, &[], &[], None, &cs).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
-        assert!(!html.contains("维基百科"), "wiki block must be absent when only youdao digest exists");
+        assert!(!html.contains("📖 Wikipedia"), "wiki block must be absent when only youdao digest exists");
         assert!(!html.contains("Splendid may refer to:"), "disambiguation string must not leak in");
     }
 
@@ -601,9 +624,9 @@ mod tests {
         });
         let p = write_preview(&dir(), "t", None, &[], &[], None, &cs).unwrap();
         let html = std::fs::read_to_string(&p).unwrap();
-        assert!(html.contains("维基百科"));
-        assert!(!html.contains("英英释义"));
-        assert!(!html.contains("同义"));
+        assert!(html.contains("📖 Wikipedia"));
+        assert!(!html.contains("🔤 English-English"));
+        assert!(!html.contains("🔄 Synonyms"));
     }
 
     #[test]

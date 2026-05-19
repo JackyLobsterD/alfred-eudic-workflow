@@ -424,14 +424,14 @@
 				<key>default</key>
 				<string></string>
 				<key>placeholder</key>
-				<string>从 developer.wordnik.com 申请</string>
+				<string>Get a key at developer.wordnik.com</string>
 				<key>required</key>
 				<false/>
 				<key>trim</key>
 				<true/>
 			</dict>
 			<key>description</key>
-			<string>Wordnik 英英词典 API key（留空则不查 Wordnik）</string>
+			<string>Wordnik English dictionary API key (leave blank to skip)</string>
 			<key>label</key>
 			<string>Wordnik API Key</string>
 			<key>type</key>
@@ -452,7 +452,7 @@
 				<true/>
 			</dict>
 			<key>description</key>
-			<string>Anthropic API key（英英结果&lt;5条时用 Claude Haiku 翻译；留空则不调用）</string>
+			<string>Anthropic API key (used by Claude Haiku when English-English results are sparse; leave blank to skip)</string>
 			<key>label</key>
 			<string>Anthropic API Key</string>
 			<key>type</key>
@@ -466,14 +466,14 @@
 				<key>default</key>
 				<string></string>
 				<key>placeholder</key>
-				<string>dictionaryapi.com 申请 Learner's</string>
+				<string>Get a key at dictionaryapi.com (Learner's)</string>
 				<key>required</key>
 				<false/>
 				<key>trim</key>
 				<true/>
 			</dict>
 			<key>description</key>
-			<string>可选：M-W Learner's 英英+音频（留空则跳过）</string>
+			<string>Optional: Merriam-Webster Learner's API key — English defs + audio (leave blank to skip)</string>
 			<key>label</key>
 			<string>Merriam-Webster Learner's Key</string>
 			<key>type</key>
@@ -487,14 +487,14 @@
 				<key>default</key>
 				<string></string>
 				<key>placeholder</key>
-				<string>dictionaryapi.com 申请 Thesaurus</string>
+				<string>Get a key at dictionaryapi.com (Thesaurus)</string>
 				<key>required</key>
 				<false/>
 				<key>trim</key>
 				<true/>
 			</dict>
 			<key>description</key>
-			<string>可选：M-W 同义/反义词库（留空则跳过）</string>
+			<string>Optional: Merriam-Webster Thesaurus API key — synonyms &amp; antonyms (leave blank to skip)</string>
 			<key>label</key>
 			<string>Merriam-Webster Thesaurus Key</string>
 			<key>type</key>
