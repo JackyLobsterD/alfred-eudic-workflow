@@ -8,6 +8,8 @@ use std::sync::Arc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use crate::sources::util::encode_path_segment;
+
 const BASE_URL: &str = "https://api.dictionaryapi.dev/api/v2/entries/en";
 
 pub struct FreeDictClient {
@@ -62,7 +64,7 @@ impl FreeDictClient {
 
     /// `None` on any error or 404 (word not found).
     pub async fn fetch(&self, spell: &str) -> Option<FreeDictData> {
-        let url = format!("{}/{}", self.base_url, spell.trim());
+        let url = format!("{}/{}", self.base_url, encode_path_segment(spell.trim()));
         let resp = self.http.get(&url).send().await.ok()?;
         if !resp.status().is_success() {
             return None;
@@ -156,5 +158,55 @@ mod tests {
         Mock::given(method("GET")).respond_with(ResponseTemplate::new(404)).mount(&server).await;
         let c = FreeDictClient::with_base_url(dict_client(), format!("{}/en", server.uri()));
         assert!(c.fetch("zzzzzz").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn empty_array_is_none() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server).await;
+        let c = FreeDictClient::with_base_url(dict_client(), format!("{}/en", server.uri()));
+        assert!(c.fetch("zzzz").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn aggregates_across_entries_and_skips_empty() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/en/run"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"phonetic": "/rʌn/", "phonetics": [{"text": "/rʌn/", "audio": ""}],
+                 "meanings": [{"partOfSpeech": "verb",
+                   "definitions": [{"definition": "to move fast", "example": ""}, {"definition": ""}],
+                   "synonyms": [], "antonyms": []}]},
+                {"phonetics": [{"text": "/rʌn/", "audio": "https://a/run.mp3"}],
+                 "meanings": [{"partOfSpeech": "noun",
+                   "definitions": [{"definition": "an act of running", "example": "a morning run"}],
+                   "synonyms": [], "antonyms": []}]}
+            ])))
+            .mount(&server).await;
+        let c = FreeDictClient::with_base_url(dict_client(), format!("{}/en", server.uri()));
+        let d = c.fetch("run").await.unwrap();
+        assert_eq!(d.phonetic.as_deref(), Some("/rʌn/"));        // first wins
+        assert_eq!(d.audio.as_deref(), Some("https://a/run.mp3")); // empty audio skipped, second entry's used
+        assert_eq!(d.meanings.len(), 2);                           // both entries' meanings collected
+        assert_eq!(d.meanings[0].definitions, vec!["to move fast"]); // empty definition skipped
+        assert!(d.meanings[0].examples.is_empty());                 // empty example skipped
+    }
+
+    #[tokio::test]
+    async fn multiword_query_is_path_encoded() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/en/blood%20type"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"meanings": [{"partOfSpeech": "noun",
+                  "definitions": [{"definition": "a classification of blood"}],
+                  "synonyms": [], "antonyms": []}]}
+            ])))
+            .mount(&server).await;
+        let c = FreeDictClient::with_base_url(dict_client(), format!("{}/en", server.uri()));
+        assert!(c.fetch("blood type").await.is_some());
     }
 }

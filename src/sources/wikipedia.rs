@@ -3,6 +3,8 @@ use std::sync::Arc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use crate::sources::util::encode_path_segment;
+
 const BASE_URL: &str = "https://en.wikipedia.org/api/rest_v1/page/summary";
 
 pub struct WikipediaClient {
@@ -45,7 +47,7 @@ impl WikipediaClient {
 
     /// Returns `None` on any error or for disambiguation/no-page results.
     pub async fn fetch(&self, spell: &str) -> Option<WikipediaSummary> {
-        let url = format!("{}/{}", self.base_url, urlencoding(spell));
+        let url = format!("{}/{}", self.base_url, encode_path_segment(spell));
         let resp = self.http.get(&url).send().await.ok()?;
         if !resp.status().is_success() {
             return None;
@@ -62,21 +64,6 @@ impl WikipediaClient {
     }
 }
 
-/// Minimal path-segment encoding (space -> %20, etc.). Wikipedia accepts
-/// underscores too but percent-encoding is safest.
-fn urlencoding(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.as_bytes() {
-        let c = *b;
-        if c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.' | b'~') {
-            out.push(c as char);
-        } else {
-            out.push('%');
-            out.push_str(&format!("{:02X}", c));
-        }
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {

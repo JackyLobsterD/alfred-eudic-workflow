@@ -10,6 +10,7 @@ use crate::cache::{Cache, CacheKind};
 
 pub mod urban;
 pub mod wordnik;
+pub mod util;
 pub mod youdao;
 pub mod wikipedia;
 pub mod datamuse;
