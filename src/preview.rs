@@ -536,9 +536,30 @@ pub fn write_preview(
 
     if let Some(r) = llm {
         if !r.translations.is_empty() {
-            let _ = write!(body, "<section><h2>🤖 Claude translation</h2><p>{}</p>", esc(&r.translations.join("; ")));
-            if let Some(ex) = r.example.as_deref().filter(|e| !e.is_empty()) {
-                let _ = write!(body, "<p><em>e.g.</em> {}</p>", esc(ex));
+            let _ = write!(body, "<section><h2>🤖 Claude translation</h2>");
+            let _ = write!(body, "<p>{}</p>", esc(&r.translations.join("; ")));
+            let usable: Vec<&crate::llm::response::LlmExample> =
+                r.examples.iter().filter(|e| !e.sentence.is_empty()).collect();
+            if !usable.is_empty() {
+                let _ = write!(body, "<h3>Examples by register</h3><ul>");
+                for ex in usable {
+                    let label = match ex.scenario.as_str() {
+                        "internet" => "🌍 Internet",
+                        "software" => "💻 Software",
+                        "casual"   => "💬 Casual",
+                        "office"   => "🏢 Office",
+                        "email"    => "✉️ Email",
+                        "slack"    => "💬 Slack",
+                        other      => other,
+                    };
+                    let _ = write!(
+                        body,
+                        "<li><span class=\"src\">{}</span> {}</li>",
+                        esc(label),
+                        esc(&ex.sentence),
+                    );
+                }
+                let _ = write!(body, "</ul>");
             }
             let _ = write!(body, "</section>");
         }
@@ -684,7 +705,7 @@ mod tests {
     #[test]
     fn llm_block_skipped_when_translations_empty() {
         let cs = CardSources::default();
-        let r = crate::llm::LlmResult { translations: vec![], example: Some("ex".into()) };
+        let r = crate::llm::LlmResult { translations: vec![], examples: vec![] };
         // only LLM provided, but empty translations -> nothing to show -> None
         assert!(write_preview(&dir(), "x", None, &[], &[], Some(&r), &cs).is_none());
     }

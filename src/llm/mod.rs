@@ -13,7 +13,9 @@ pub use response::LlmResult;
 
 const ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const MODEL: &str = "claude-haiku-4-5";
-const MAX_TOKENS: u32 = 200;
+// Room for 1-3 Chinese translations plus 6 English example sentences
+// (~20 words each), with headroom for the JSON envelope.
+const MAX_TOKENS: u32 = 1000;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 pub struct LlmClient {
@@ -156,13 +158,15 @@ mod tests {
             .and(path("/v1/messages"))
             .and(header("x-api-key", "k"))
             .respond_with(ResponseTemplate::new(200).set_body_json(
-                ok_envelope(r#"{"translations":["机缘"],"example":"What serendipity!"}"#)
+                ok_envelope(r#"{"translations":["机缘"],"examples":[{"scenario":"casual","sentence":"What serendipity!"}]}"#)
             ))
             .mount(&server)
             .await;
         let client = LlmClient::with_endpoint(llm_client(), "k".into(), format!("{}/v1/messages", server.uri()));
         let r = client.translate("serendipity").await.unwrap();
         assert_eq!(r.translations, vec!["机缘"]);
+        assert_eq!(r.examples.len(), 1);
+        assert_eq!(r.examples[0].sentence, "What serendipity!");
     }
 
     #[tokio::test]
